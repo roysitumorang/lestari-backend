@@ -136,6 +136,7 @@ transfers, debts, billing, reports) are explicit handlers that run in transactio
 ```bash
 make test                         # unit tests (route coverage of the client contract)
 make test-integration             # + integration tests against PostgreSQL 18 (needs uuidv7())
+make lint                         # go vet + staticcheck (all checks) + golangci-lint (.golangci.yml)
 ```
 
 The integration suite (`TEST_DATABASE_URL`) migrates a database, seeds the demo store through the API, then:

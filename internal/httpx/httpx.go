@@ -212,7 +212,7 @@ func QueryArray(c fiber.Ctx, key string) []string {
 	}
 	if len(out) == 0 {
 		if v := c.Query(key); v != "" {
-			for _, s := range strings.Split(v, ",") {
+			for s := range strings.SplitSeq(v, ",") {
 				if s = strings.TrimSpace(s); s != "" {
 					out = append(out, s)
 				}

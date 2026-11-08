@@ -38,7 +38,7 @@ func Load() Config {
 		BodyLimitMB:     atoi(env("BODY_LIMIT_MB", "20"), 20),
 	}
 	if o := strings.TrimSpace(os.Getenv("CORS_ORIGINS")); o != "" {
-		for _, s := range strings.Split(o, ",") {
+		for s := range strings.SplitSeq(o, ",") {
 			if s = strings.TrimSpace(s); s != "" {
 				c.CORSOrigins = append(c.CORSOrigins, s)
 			}

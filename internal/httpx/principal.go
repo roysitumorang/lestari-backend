@@ -1,6 +1,8 @@
 package httpx
 
 import (
+	"slices"
+
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -35,19 +37,9 @@ func (p *Principal) Can(perm string) bool {
 	if p.Role == "owner" || p.Role == "administrator" {
 		return true
 	}
-	for _, x := range p.Permissions {
-		if x == perm {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Permissions, perm)
 }
 
 func (p *Principal) HasPlugin(code string) bool {
-	for _, x := range p.Plugins {
-		if x == code {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Plugins, code)
 }

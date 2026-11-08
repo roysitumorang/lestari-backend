@@ -85,7 +85,7 @@ func (h *harness) call(method, path string, body any, ctype ...string) (int, []b
 		b, _ := json.Marshal(body)
 		r = bytes.NewReader(b)
 	}
-	req := httptest.NewRequest(method, "/api/v1"+path, r)
+	req := httptest.NewRequestWithContext(h.t.Context(), method, "/api/v1"+path, r)
 	req.Header.Set("Content-Type", ct)
 	req.Header.Set("Authorization", "Bearer "+h.token)
 	if h.branch != "" {
@@ -165,9 +165,9 @@ func (h *harness) resolveParams(path string, query string) (string, bool) {
 	if !strings.Contains(path, ":") {
 		return path, true
 	}
-	i := strings.Index(path, "/:")
-	base := path[:i]
-	param := strings.SplitN(path[i+2:], "/", 2)[0]
+	before, after, _ := strings.Cut(path, "/:")
+	base := before
+	param, _, _ := strings.Cut(after, "/")
 	if param == "date" {
 		return strings.Replace(path, ":date", time.Now().Format("2006-01-02"), 1), true
 	}
@@ -312,7 +312,7 @@ func TestIntegrationWorkflows(t *testing.T) {
 	op := h.json("POST", "/stock-opnames", map[string]any{"opname_date": today, "performed_by_name": "Test", "performed_by_role": "owner",
 		"items": []any{map[string]any{"product_id": pid, "physical_stock": 33}}}, 201)
 	h.json("POST", fmt.Sprintf("/stock-opnames/%v/approve", op["data"].(map[string]any)["id"]), nil, 200)
-	st := h.json("GET", fmt.Sprintf("/inventory/stocks?q=%s", "Test%20tea"), nil, 200)
+	st := h.json("GET", "/inventory/stocks?q="+"Test%20tea", nil, 200)
 	if r := first(st); r == nil || r["stock"].(float64) != 33 {
 		t.Errorf("stock after opname: %v", r)
 	}

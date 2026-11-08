@@ -10,7 +10,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/roysitumorang/lestari-backend/internal/auth"
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
@@ -28,33 +28,33 @@ var defaultPermissions = map[string][]string{
 const includedStaff = 2
 const staffMonthly = 15000.0
 
-func requireManager(h *Ctx) error {
+func requireManager(h *crud.Ctx) error {
 	if h.P.Role != "owner" && h.P.Role != "administrator" {
 		return httpx.Forbidden("Only the owner or an administrator can manage staff.")
 	}
 	return nil
 }
 
-func (a *API) staffResource() *Resource {
-	return &Resource{
+func (a *API) staffResource() *crud.Resource {
+	return &crud.Resource{
 		Name: "Staff", Singular: "Staff member", Table: "users", SoftDelete: true, DefaultSort: "t.name",
-		Scope: func(b *Builder, p *httpx.Principal) string {
+		Scope: func(b *crud.Builder, p *httpx.Principal) string {
 			return "t.store_id = " + b.Add(p.StoreID) + " AND t.role <> 'owner'"
 		},
 		InsertScope: storeInsert,
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "name", Required: true, Search: true},
 			{Name: "email", Required: true, Search: true},
-			{Name: "password", Kind: Password, Col: "password_hash", Required: true},
+			{Name: "password", Kind: crud.Password, Col: "password_hash", Required: true},
 			{Name: "phone", Search: true},
 			{Name: "role", Required: true, Enum: en("administrator", "manager", "cashier"), Default: "cashier", Filter: true},
-			{Name: "ppob_pin", Kind: PIN, Col: "ppob_pin_hash"},
-			{Name: "branch_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "branch", Table: "branches", ScopeCol: "store_id"}},
+			{Name: "ppob_pin", Kind: crud.PIN, Col: "ppob_pin_hash"},
+			{Name: "branch_id", Kind: crud.UUID, Filter: true, Ref: &crud.Ref{Key: "branch", Table: "branches", ScopeCol: "store_id"}},
 			{Name: "address"},
 			{Name: "status", ReadOnly: true, Filter: true},
-			{Name: "last_login_at", Kind: Timestamp, ReadOnly: true},
+			{Name: "last_login_at", Kind: crud.Timestamp, ReadOnly: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if err := requireManager(h); err != nil {
 				return err
 			}
@@ -81,7 +81,7 @@ func (a *API) staffResource() *Resource {
 			}
 			return nil
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
+		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
 			if created {
 				return nil
 			}
@@ -92,7 +92,7 @@ func (a *API) staffResource() *Resource {
 			}
 			return nil
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
+		BeforeDelete: func(ctx context.Context, h *crud.Ctx, id string) error {
 			if err := requireManager(h); err != nil {
 				return err
 			}
@@ -114,10 +114,7 @@ func (a *API) registerStaff() {
 		if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM users WHERE store_id=$1 AND role <> 'owner' AND deleted_at IS NULL`, httpx.P(c).StoreID).Scan(&current); err != nil {
 			return err
 		}
-		billable := current + extra - includedStaff
-		if billable < 0 {
-			billable = 0
-		}
+		billable := max(current+extra-includedStaff, 0)
 		return httpx.OK(c, fiber.Map{"monthly_cost": float64(billable) * staffMonthly, "currency": "IDR", "included_staff": includedStaff, "current_staff": current})
 	})
 	a.addH("GET", "/staff/:id/permissions", func(c fiber.Ctx) error {
@@ -165,7 +162,7 @@ func (a *API) registerStaff() {
 		if tag.RowsAffected() == 0 {
 			return httpx.NotFound("Staff member")
 		}
-		a.activity(c, "permissions_changed", fmt.Sprintf("Changed access rights of staff %s", id))
+		a.activity(c, "permissions_changed", "Changed access rights of staff "+id)
 		return httpx.OK(c, fiber.Map{"permissions": in.Permissions})
 	})
 	a.addH("POST", "/staff/:id/resend-invitation", func(c fiber.Ctx) error {
@@ -199,11 +196,11 @@ func (a *API) registerStaff() {
 
 	// attendance
 	gate := auth.RequirePlugin("attendance")
-	a.add("GET", "/staff-attendances", gate, fiber.Handler(a.listAttendance))
-	a.add("GET", "/staff-attendances/export", gate, fiber.Handler(a.exportAttendance))
-	a.add("GET", "/staff-attendances/:id", gate, fiber.Handler(a.getAttendance))
-	a.add("POST", "/staff-attendances/clock-in", gate, fiber.Handler(a.clockIn))   // cashier app
-	a.add("POST", "/staff-attendances/clock-out", gate, fiber.Handler(a.clockOut)) // cashier app
+	a.add("GET", "/staff-attendances", gate, a.listAttendance)
+	a.add("GET", "/staff-attendances/export", gate, a.exportAttendance)
+	a.add("GET", "/staff-attendances/:id", gate, a.getAttendance)
+	a.add("POST", "/staff-attendances/clock-in", gate, a.clockIn)   // cashier app
+	a.add("POST", "/staff-attendances/clock-out", gate, a.clockOut) // cashier app
 
 	a.registerHelpAccess()
 }
@@ -315,19 +312,19 @@ func (a *API) clockOut(c fiber.Ctx) error {
 // ---------- support access ----------
 
 func (a *API) registerHelpAccess() {
-	res := &Resource{
+	res := &crud.Resource{
 		Name: "Support access", Singular: "Support access", Table: "help_accesses", DefaultSort: "t.created_at DESC",
 		Scope: storeScope, InsertScope: storeInsert,
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "platform", Required: true, Enum: en("web", "app"), Default: "web"},
-			{Name: "account_id", Kind: UUID, Required: true, Ref: &Ref{Key: "account", Table: "users", Label: "email", ScopeCol: "store_id"}},
+			{Name: "account_id", Kind: crud.UUID, Required: true, Ref: &crud.Ref{Key: "account", Table: "users", Label: "email", ScopeCol: "store_id"}},
 			{Name: "account_email", Expr: "(SELECT email FROM users WHERE id = t.account_id)"},
-			{Name: "duration_hours", Kind: Int, Required: true, Enum: en("1", "6", "24", "72")},
+			{Name: "duration_hours", Kind: crud.Int, Required: true, Enum: en("1", "6", "24", "72")},
 			{Name: "description", Required: true},
 			{Name: "status", Expr: "(CASE WHEN t.status = 'active' AND t.expires_at < now() THEN 'expired' ELSE t.status END)", Filter: true},
-			{Name: "expires_at", Kind: Timestamp, ReadOnly: true},
+			{Name: "expires_at", Kind: crud.Timestamp, ReadOnly: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id != "" {
 				return httpx.Conflict("Support access cannot be edited; revoke it and create a new one.")
 			}

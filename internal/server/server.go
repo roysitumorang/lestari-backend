@@ -11,7 +11,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
-	"github.com/gofiber/fiber/v3/middleware/recover"
+	recoverer "github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,7 +38,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*fiber.App, *
 			return httpx.ErrorHandler(func(err error) { log.Error("request failed", "err", err) })(c, err)
 		},
 	})
-	app.Use(recover.New(recover.Config{EnableStackTrace: !cfg.IsProduction()}))
+	app.Use(recoverer.New(recoverer.Config{EnableStackTrace: !cfg.IsProduction()}))
 	app.Use(requestid.New())
 	if !cfg.IsProduction() || os.Getenv("ACCESS_LOG") == "1" {
 		app.Use(logger.New())
@@ -51,7 +51,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*fiber.App, *
 		MaxAge:        3600,
 	}))
 
-	_ = os.MkdirAll(cfg.UploadDir, 0o755)
+	_ = os.MkdirAll(cfg.UploadDir, 0o750)
 	app.Get("/uploads/*", static.New(filepath.Clean(cfg.UploadDir)))
 	app.Get("/healthz", func(c fiber.Ctx) error {
 		if err := pool.Ping(c.Context()); err != nil {

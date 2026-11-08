@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/roysitumorang/lestari-backend/internal/auth"
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
@@ -18,28 +18,28 @@ import (
 const branchRenewalMonthly = 99000.0
 
 func (a *API) registerBranches() {
-	branches := &Resource{
+	branches := &crud.Resource{
 		Name: "Branches", Singular: "Branch", Table: "branches", SoftDelete: true, DefaultSort: "t.is_head_office DESC, t.name",
 		Scope: storeScope, InsertScope: storeInsert,
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "name", Required: true, Search: true},
 			{Name: "code", Search: true},
 			{Name: "manager_name"},
 			{Name: "phone"},
 			{Name: "email", Required: true},
-			{Name: "password", Kind: Password, Col: "-"},
+			{Name: "password", Kind: crud.Password, Col: "-"},
 			{Name: "address"},
-			{Name: "is_head_office", Kind: Bool, ReadOnly: true},
-			{Name: "subscription_expires_at", Kind: Timestamp, ReadOnly: true},
+			{Name: "is_head_office", Kind: crud.Bool, ReadOnly: true},
+			{Name: "subscription_expires_at", Kind: crud.Timestamp, ReadOnly: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if h.P.Role != "owner" && h.P.Role != "administrator" {
 				return httpx.Forbidden("Only the owner or an administrator can manage branches.")
 			}
 			delete(vals, "-") // password is handled in AfterWrite
 			return nil
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
+		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
 			pw, _ := httpx.DecodeBase64Password(httpx.Str(h.Body, "password")) // validated in Values
 			email := strings.ToLower(httpx.Str(h.Body, "email"))
 			if created {
@@ -84,7 +84,7 @@ func (a *API) registerBranches() {
 			}
 			return nil
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
+		BeforeDelete: func(ctx context.Context, h *crud.Ctx, id string) error {
 			if !h.P.IsOwner() {
 				return httpx.Forbidden("Only the owner can delete branches.")
 			}
@@ -103,25 +103,25 @@ func (a *API) registerBranches() {
 	a.addH("POST", "/branches/:id/copy-products", a.copyProducts)
 
 	// per-branch prices of products that came from the head office
-	branchProducts := &Resource{
+	branchProducts := &crud.Resource{
 		Name: "Branch products", Singular: "Branch product", Table: "products", SoftDelete: true, DefaultSort: "t.branch_id, t.name",
-		Scope: func(b *Builder, p *httpx.Principal) string {
+		Scope: func(b *crud.Builder, p *httpx.Principal) string {
 			return "t.branch_id IN (SELECT id FROM branches WHERE store_id = " + b.Add(p.StoreID) + " AND deleted_at IS NULL)"
 		},
-		Fields: []Field{
-			{Name: "branch_id", Kind: UUID, ReadOnly: true, Filter: true},
+		Fields: []crud.Field{
+			{Name: "branch_id", Kind: crud.UUID, ReadOnly: true, Filter: true},
 			{Name: "branch_name", Expr: "(SELECT name FROM branches WHERE id = t.branch_id)"},
 			{Name: "product_name", Col: "name", ReadOnly: true, Search: true},
 			{Name: "sku", ReadOnly: true, Search: true},
-			{Name: "category_id", Kind: UUID, ReadOnly: true, Filter: true},
-			{Name: "stock", Kind: Num, ReadOnly: true},
-			{Name: "selling_price", Kind: Num, Required: true, Min: F(0)},
-			{Name: "purchase_price", Kind: Num, Min: F(0)},
-			{Name: "is_available", Kind: Bool},
+			{Name: "category_id", Kind: crud.UUID, ReadOnly: true, Filter: true},
+			{Name: "stock", Kind: crud.Num, ReadOnly: true},
+			{Name: "selling_price", Kind: crud.Num, Required: true, Min: new(float64(0))},
+			{Name: "purchase_price", Kind: crud.Num, Min: new(float64(0))},
+			{Name: "is_available", Kind: crud.Bool},
 		},
 	}
-	a.CRUD.Register(a.gated("business"), "/branch-products", branchProducts, "list", "update", "export")
-	a.add("POST", "/branch-products/sync-prices", auth.RequirePlugin("business"), fiber.Handler(a.syncBranchPrices))
+	a.CRUD.Register(a.businessOnly(), "/branch-products", branchProducts, "list", "update", "export")
+	a.add("POST", "/branch-products/sync-prices", auth.RequirePlugin("business"), a.syncBranchPrices)
 
 	a.addH("GET", "/billing/branches", a.branchBilling)
 	a.addH("POST", "/billing/branch-renewals", a.branchRenewal)
@@ -302,7 +302,7 @@ func transferDirection(p *httpx.Principal, row map[string]any) {
 	}
 }
 
-var transferDirectionFilter = Filter{Param: "direction", Build: func(b *Builder, p *httpx.Principal, v string) string {
+var transferDirectionFilter = crud.Filter{Param: "direction", Build: func(b *crud.Builder, p *httpx.Principal, v string) string {
 	switch v {
 	case "out":
 		return "t.from_branch_id = " + b.Add(p.BranchID)
@@ -313,7 +313,7 @@ var transferDirectionFilter = Filter{Param: "direction", Build: func(b *Builder,
 }}
 
 // transferRoleFilter: "head_office" = transfers where the head office takes part, "branch" = between other branches.
-var transferRoleFilter = Filter{Param: "role", Build: func(b *Builder, p *httpx.Principal, v string) string {
+var transferRoleFilter = crud.Filter{Param: "role", Build: func(b *crud.Builder, p *httpx.Principal, v string) string {
 	hq := b.Add(p.HeadOffice)
 	switch v {
 	case "head_office":
@@ -324,32 +324,32 @@ var transferRoleFilter = Filter{Param: "role", Build: func(b *Builder, p *httpx.
 	return ""
 }}
 
-func (a *API) transferResource() *Resource {
-	return &Resource{
+func (a *API) transferResource() *crud.Resource {
+	return &crud.Resource{
 		Name: "Stock transfers", Singular: "Stock transfer", Table: "stock_transfers", DefaultSort: "t.transfer_date DESC, t.id DESC",
-		Scope: func(b *Builder, p *httpx.Principal) string {
+		Scope: func(b *crud.Builder, p *httpx.Principal) string {
 			ph := b.Add(p.BranchID)
 			return "t.store_id = " + b.Add(p.StoreID) + " AND (t.from_branch_id = " + ph + " OR t.to_branch_id = " + ph + ")"
 		},
 		InsertScope: func(p *httpx.Principal) map[string]any {
 			return map[string]any{"store_id": p.StoreID, "from_branch_id": p.BranchID}
 		},
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "transfer_number", ReadOnly: true, Search: true},
-			{Name: "from_branch_id", Kind: UUID, ReadOnly: true, Ref: &Ref{Key: "from_branch", Table: "branches", ScopeCol: "store_id"}},
-			{Name: "to_branch_id", Kind: UUID, Required: true, Ref: &Ref{Key: "to_branch", Table: "branches", ScopeCol: "store_id"}},
-			{Name: "transfer_date", Kind: Date, Required: true},
-			{Name: "requires_confirmation", Kind: Bool, Default: false},
+			{Name: "from_branch_id", Kind: crud.UUID, ReadOnly: true, Ref: &crud.Ref{Key: "from_branch", Table: "branches", ScopeCol: "store_id"}},
+			{Name: "to_branch_id", Kind: crud.UUID, Required: true, Ref: &crud.Ref{Key: "to_branch", Table: "branches", ScopeCol: "store_id"}},
+			{Name: "transfer_date", Kind: crud.Date, Required: true},
+			{Name: "requires_confirmation", Kind: crud.Bool, Default: false},
 			{Name: "status", ReadOnly: true, Filter: true},
 			{Name: "note"},
 			{Name: "reject_reason", ReadOnly: true},
-			{Name: "total_quantity", Kind: Num, Expr: "(SELECT COALESCE(sum(quantity),0) FROM stock_transfer_items i WHERE i.transfer_id = t.id)"},
-			{Name: "item_count", Kind: Int, Expr: "(SELECT count(*) FROM stock_transfer_items i WHERE i.transfer_id = t.id)"},
-			{Name: "items", Kind: JSON, Virtual: true, Required: true},
+			{Name: "total_quantity", Kind: crud.Num, Expr: "(SELECT COALESCE(sum(quantity),0) FROM stock_transfer_items i WHERE i.transfer_id = t.id)"},
+			{Name: "item_count", Kind: crud.Int, Expr: "(SELECT count(*) FROM stock_transfer_items i WHERE i.transfer_id = t.id)"},
+			{Name: "items", Kind: crud.JSON, Virtual: true, Required: true},
 		},
-		Filters: []Filter{transferDirectionFilter, transferRoleFilter, dateFrom("t.transfer_date"), dateTo("t.transfer_date")},
+		Filters: []crud.Filter{transferDirectionFilter, transferRoleFilter, dateFrom("t.transfer_date"), dateTo("t.transfer_date")},
 		Post:    transferDirection,
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id != "" {
 				return httpx.Conflict("A transfer cannot be edited; delete it and create a new one.")
 			}
@@ -364,10 +364,10 @@ func (a *API) transferResource() *Resource {
 			}
 			return err
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
+		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
 			return a.saveTransferItems(ctx, h.Tx, h.P, id, httpx.Items(h.Body, "items"))
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
+		BeforeDelete: func(ctx context.Context, h *crud.Ctx, id string) error {
 			var status string
 			var from string
 			if err := h.Tx.QueryRow(ctx, `SELECT status, from_branch_id FROM stock_transfers WHERE id=$1`, id).Scan(&status, &from); err != nil {

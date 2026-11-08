@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 
@@ -11,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	qrcode "github.com/skip2/go-qrcode"
 
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
@@ -20,16 +22,16 @@ import (
 type settingDef struct {
 	Key      string
 	Plugin   string // plugin needed to change it
-	Fields   []Field
+	Fields   []crud.Field
 	Defaults map[string]any
 	Validate func(ctx context.Context, a *API, p *httpx.Principal, vals map[string]any) error
 	After    func(ctx context.Context, tx pgx.Tx, p *httpx.Principal, vals map[string]any) error
 }
 
-func bools(names ...string) []Field {
-	out := make([]Field, len(names))
+func bools(names ...string) []crud.Field {
+	out := make([]crud.Field, len(names))
 	for i, n := range names {
-		out[i] = Field{Name: n, Kind: Bool}
+		out[i] = crud.Field{Name: n, Kind: crud.Bool}
 	}
 	return out
 }
@@ -45,18 +47,18 @@ func (a *API) settingDefs() map[string]*settingDef {
 	defs := []*settingDef{
 		{Key: "points", Plugin: "business",
 			Fields: append(bools("is_enabled", "earn_on_credit_sales"),
-				Field{Name: "earn_spend_amount", Kind: Num, Min: F(0)}, Field{Name: "earn_points", Kind: Num, Min: F(0)},
-				Field{Name: "redeem_point_value", Kind: Num, Min: F(0)}, Field{Name: "minimum_redeem_points", Kind: Num, Min: F(0)},
-				Field{Name: "expiry_days", Kind: Int, Min: F(0)}),
+				crud.Field{Name: "earn_spend_amount", Kind: crud.Num, Min: new(float64(0))}, crud.Field{Name: "earn_points", Kind: crud.Num, Min: new(float64(0))},
+				crud.Field{Name: "redeem_point_value", Kind: crud.Num, Min: new(float64(0))}, crud.Field{Name: "minimum_redeem_points", Kind: crud.Num, Min: new(float64(0))},
+				crud.Field{Name: "expiry_days", Kind: crud.Int, Min: new(float64(0))}),
 			Defaults: map[string]any{"is_enabled": false, "earn_spend_amount": 10000.0, "earn_points": 1.0, "redeem_point_value": 100.0, "minimum_redeem_points": 0.0, "expiry_days": 0.0, "earn_on_credit_sales": false}},
 		{Key: "store",
-			Fields: []Field{{Name: "logo_url"}, {Name: "cover_url"}, {Name: "name", Required: true}, {Name: "owner_name"}, {Name: "phone"}, {Name: "motto"},
+			Fields: []crud.Field{{Name: "logo_url"}, {Name: "cover_url"}, {Name: "name", Required: true}, {Name: "owner_name"}, {Name: "phone"}, {Name: "motto"},
 				{Name: "business_type"}, {Name: "business_type_other"}, {Name: "address"}, {Name: "country_code", Enum: en("ID", "MY", "SG", "TL")},
-				{Name: "province_id", Kind: UUID}, {Name: "city_id", Kind: UUID}, {Name: "postal_code"},
-				{Name: "latitude", Kind: Num, Min: F(-90), Max: F(90)}, {Name: "longitude", Kind: Num, Min: F(-180), Max: F(180)},
+				{Name: "province_id", Kind: crud.UUID}, {Name: "city_id", Kind: crud.UUID}, {Name: "postal_code"},
+				{Name: "latitude", Kind: crud.Num, Min: new(float64(-90)), Max: new(float64(90))}, {Name: "longitude", Kind: crud.Num, Min: new(float64(-180)), Max: new(float64(180))},
 				{Name: "stock_valuation_method", Enum: en("default", "fifo", "lifo", "average")},
 				{Name: "currency", Enum: en("IDR", "MYR", "SGD", "USD", "AUD", "EUR")}, {Name: "timezone", Enum: en("Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura")},
-				{Name: "allow_negative_stock", Kind: Bool}},
+				{Name: "allow_negative_stock", Kind: crud.Bool}},
 			Defaults: map[string]any{"name": "", "country_code": "ID", "currency": "IDR", "timezone": "Asia/Jakarta", "stock_valuation_method": "average", "allow_negative_stock": false},
 			After: func(ctx context.Context, tx pgx.Tx, p *httpx.Principal, vals map[string]any) error {
 				name, _ := vals["name"].(string)
@@ -72,36 +74,36 @@ func (a *API) settingDefs() map[string]*settingDef {
 			}},
 		{Key: "online-store",
 			Fields: append(bools("is_enabled", "seo_enabled", "pwa_enabled", "use_physical_stock", "notify_owner"),
-				Field{Name: "subdomain"}, Field{Name: "store_email"}, Field{Name: "description"}, Field{Name: "facebook"}, Field{Name: "twitter"}, Field{Name: "instagram"},
-				Field{Name: "notify_staff_ids", Kind: UUIDArray}),
+				crud.Field{Name: "subdomain"}, crud.Field{Name: "store_email"}, crud.Field{Name: "description"}, crud.Field{Name: "facebook"}, crud.Field{Name: "twitter"}, crud.Field{Name: "instagram"},
+				crud.Field{Name: "notify_staff_ids", Kind: crud.UUIDArray}),
 			Defaults: map[string]any{"is_enabled": false, "seo_enabled": true, "pwa_enabled": false, "use_physical_stock": true, "notify_owner": true, "notify_staff_ids": []any{}},
 			Validate: func(ctx context.Context, a *API, p *httpx.Principal, vals map[string]any) error {
 				return a.uniqueSlug(ctx, p, "online-store", "subdomain", vals)
 			}},
 		{Key: "link-page",
-			Fields: append(bools("is_enabled", "show_watermark"), Field{Name: "username", Required: true}, Field{Name: "slogan"},
-				Field{Name: "background_color"}, Field{Name: "links", Kind: JSON}),
+			Fields: append(bools("is_enabled", "show_watermark"), crud.Field{Name: "username", Required: true}, crud.Field{Name: "slogan"},
+				crud.Field{Name: "background_color"}, crud.Field{Name: "links", Kind: crud.JSON}),
 			Defaults: map[string]any{"is_enabled": false, "username": "", "show_watermark": true, "background_color": "#0f9d76", "links": []any{}},
 			Validate: func(ctx context.Context, a *API, p *httpx.Principal, vals map[string]any) error {
 				return a.uniqueSlug(ctx, p, "link-page", "username", vals)
 			}},
 		{Key: "qr-order",
 			Fields: append(bools("is_enabled", "qris_enabled", "cashier_payment_enabled", "addons_enabled", "table_ordering_enabled", "kiosk_enabled", "notify_owner"),
-				Field{Name: "order_expiry_hours", Kind: Int, Enum: en("3", "6", "12", "24")}, Field{Name: "payment_timing", Enum: en("pay_later", "pay_now")},
-				Field{Name: "menu_layout", Enum: en("tabs", "by_category")}, Field{Name: "category_ids", Kind: UUIDArray}, Field{Name: "notify_staff_ids", Kind: UUIDArray}),
+				crud.Field{Name: "order_expiry_hours", Kind: crud.Int, Enum: en("3", "6", "12", "24")}, crud.Field{Name: "payment_timing", Enum: en("pay_later", "pay_now")},
+				crud.Field{Name: "menu_layout", Enum: en("tabs", "by_category")}, crud.Field{Name: "category_ids", Kind: crud.UUIDArray}, crud.Field{Name: "notify_staff_ids", Kind: crud.UUIDArray}),
 			Defaults: map[string]any{"is_enabled": false, "order_expiry_hours": 3.0, "payment_timing": "pay_later", "qris_enabled": false, "cashier_payment_enabled": true,
 				"addons_enabled": false, "menu_layout": "tabs", "category_ids": []any{}, "table_ordering_enabled": false, "kiosk_enabled": false, "notify_owner": true, "notify_staff_ids": []any{}}},
 		{Key: "default-tax",
-			Fields:   append(bools("is_enabled", "is_inclusive"), Field{Name: "rate", Kind: Num, Min: F(0), Max: F(100)}),
+			Fields:   append(bools("is_enabled", "is_inclusive"), crud.Field{Name: "rate", Kind: crud.Num, Min: new(float64(0)), Max: new(float64(100))}),
 			Defaults: map[string]any{"is_enabled": false, "rate": 0.0, "is_inclusive": false}},
 		{Key: "service-charge", Plugin: "business",
-			Fields:   append(bools("is_enabled", "apply_before_tax"), Field{Name: "name"}, Field{Name: "rate", Kind: Num, Min: F(0), Max: F(100)}),
+			Fields:   append(bools("is_enabled", "apply_before_tax"), crud.Field{Name: "name"}, crud.Field{Name: "rate", Kind: crud.Num, Min: new(float64(0)), Max: new(float64(100))}),
 			Defaults: map[string]any{"is_enabled": false, "name": "Service charge", "rate": 0.0, "apply_before_tax": true}},
 		{Key: "rounding", Plugin: "business",
-			Fields:   append(bools("is_enabled"), Field{Name: "mode", Enum: en("nearest", "up", "down")}, Field{Name: "multiple", Kind: Int, Enum: en("50", "100", "500", "1000")}),
+			Fields:   append(bools("is_enabled"), crud.Field{Name: "mode", Enum: en("nearest", "up", "down")}, crud.Field{Name: "multiple", Kind: crud.Int, Enum: en("50", "100", "500", "1000")}),
 			Defaults: map[string]any{"is_enabled": false, "mode": "nearest", "multiple": 100.0}},
 		{Key: "receipt",
-			Fields: append(bools(receiptFlags...), Field{Name: "logo_url"}, Field{Name: "header_note"}, Field{Name: "footer_note"}),
+			Fields: append(bools(receiptFlags...), crud.Field{Name: "logo_url"}, crud.Field{Name: "header_note"}, crud.Field{Name: "footer_note"}),
 			Defaults: func() map[string]any {
 				m := map[string]any{"footer_note": "Thank you for shopping with us!"}
 				for _, f := range receiptFlags {
@@ -110,12 +112,12 @@ func (a *API) settingDefs() map[string]*settingDef {
 				return m
 			}()},
 		{Key: "display",
-			Fields:   []Field{{Name: "color_theme", Enum: en("emerald", "ivory", "charcoal")}, {Name: "show_breadcrumbs", Kind: Bool}, {Name: "language", Enum: en("en", "id")}},
+			Fields:   []crud.Field{{Name: "color_theme", Enum: en("emerald", "ivory", "charcoal")}, {Name: "show_breadcrumbs", Kind: crud.Bool}, {Name: "language", Enum: en("en", "id")}},
 			Defaults: map[string]any{"color_theme": "emerald", "show_breadcrumbs": true, "language": "en"}},
 		{Key: "catalog",
 			Fields: append(bools("bank_transfer_enabled", "direct_payment_enabled", "takeaway_enabled", "cod_enabled", "courier_enabled", "own_courier_enabled"),
-				Field{Name: "couriers", Kind: StrArray, Enum: couriers}, Field{Name: "own_courier_mode", Enum: en("city", "radius")},
-				Field{Name: "own_courier_city_rates", Kind: JSON}, Field{Name: "own_courier_radius_rates", Kind: JSON}),
+				crud.Field{Name: "couriers", Kind: crud.StrArray, Enum: couriers}, crud.Field{Name: "own_courier_mode", Enum: en("city", "radius")},
+				crud.Field{Name: "own_courier_city_rates", Kind: crud.JSON}, crud.Field{Name: "own_courier_radius_rates", Kind: crud.JSON}),
 			Defaults: map[string]any{"bank_transfer_enabled": true, "direct_payment_enabled": true, "takeaway_enabled": true, "cod_enabled": false, "courier_enabled": false,
 				"couriers": []any{}, "own_courier_enabled": false, "own_courier_mode": "city", "own_courier_city_rates": []any{}, "own_courier_radius_rates": []any{}}},
 	}
@@ -130,9 +132,7 @@ func (a *API) settingDefs() map[string]*settingDef {
 func (a *API) setting(ctx context.Context, q db.Querier, branchID string, key string) (map[string]any, error) {
 	out := map[string]any{}
 	if d, ok := a.defs[key]; ok {
-		for k, v := range d.Defaults {
-			out[k] = v
-		}
+		maps.Copy(out, d.Defaults)
 	}
 	var raw []byte
 	err := q.QueryRow(ctx, `SELECT value FROM settings WHERE branch_id=$1 AND key=$2`, branchID, key).Scan(&raw)
@@ -146,9 +146,7 @@ func (a *API) setting(ctx context.Context, q db.Querier, branchID string, key st
 	if err := json.Unmarshal(raw, &stored); err != nil {
 		return out, err
 	}
-	for k, v := range stored {
-		out[k] = v
-	}
+	maps.Copy(out, stored)
 	return out, nil
 }
 
@@ -184,7 +182,7 @@ func (a *API) getSetting(key string) fiber.Handler {
 
 func (a *API) putSetting(key string) fiber.Handler {
 	d := a.defs[key]
-	res := &Resource{Singular: "Setting", Fields: d.Fields}
+	res := &crud.Resource{Singular: "Setting", Fields: d.Fields}
 	return func(c fiber.Ctx) error {
 		p := httpx.P(c)
 		if d.Plugin != "" {
@@ -224,9 +222,7 @@ func (a *API) putSetting(key string) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		for k, x := range vals {
-			cur[k] = x
-		}
+		maps.Copy(cur, vals)
 		b, _ := json.Marshal(cur)
 		err = a.tx(c.Context(), func(tx pgx.Tx) error {
 			if _, err := tx.Exec(c.Context(), `INSERT INTO settings (branch_id, key, value) VALUES ($1,$2,$3::jsonb)
@@ -522,16 +518,18 @@ func (a *API) resetData(c fiber.Ctx) error {
 		return err
 	}
 	if err := a.checkOTP(c.Context(), p.UserID, "reset_data", "", in.OTP); err != nil {
-		if he, ok := err.(*httpx.Error); ok && he.Fields != nil {
+		he := &httpx.Error{}
+		if errors.As(err, &he) {
 			he.Fields = map[string][]string{"otp": he.Fields["code"]}
 		}
 		return err
 	}
 	branch, store := p.BranchID, p.StoreID
 	start, end := "1900-01-01", "2999-12-31"
-	if in.Scope == "year" {
+	switch in.Scope {
+	case "year":
 		start, end = fmt.Sprintf("%d-01-01", in.Year), fmt.Sprintf("%d-12-31", in.Year)
-	} else if in.Scope == "month" {
+	case "month":
 		start = fmt.Sprintf("%d-%02d-01", in.Year, in.Month)
 		end = fmt.Sprintf("(DATE '%s' + interval '1 month' - interval '1 day')::date", start)
 	}

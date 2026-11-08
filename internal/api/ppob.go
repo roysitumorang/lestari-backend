@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/roysitumorang/lestari-backend/internal/auth"
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
 )
@@ -18,13 +18,11 @@ type ppobItem struct {
 	BasePrice, SellingPrice, BaseAdminFee, AdminFee *float64
 }
 
-func f64(v float64) *float64 { return &v }
-
 func prepaid(cat, provider, code, name string, base, sell float64) ppobItem {
-	return ppobItem{"prepaid", cat, provider, code, name, f64(base), f64(sell), nil, nil}
+	return ppobItem{"prepaid", cat, provider, code, name, new(base), new(sell), nil, nil}
 }
 func postpaid(cat, code, name string, fee float64) ppobItem {
-	return ppobItem{"postpaid", cat, "", code, name, nil, nil, f64(fee), f64(fee + 1000)}
+	return ppobItem{"postpaid", cat, "", code, name, nil, nil, new(fee), new(fee + 1000)}
 }
 
 // ppobCatalog is the starter price list given to every new branch.
@@ -70,23 +68,23 @@ func (a *API) registerPPOB() {
 	a.addH("POST", "/ppob/transactions", a.sellPPOB) // cashier app
 
 	for _, kind := range []string{"prepaid", "postpaid"} {
-		fields := []Field{
+		fields := []crud.Field{
 			{Name: "category", ReadOnly: true, Filter: true},
 			{Name: "provider", ReadOnly: true, Search: true},
 			{Name: "product_code", ReadOnly: true, Search: true},
 			{Name: "product_name", ReadOnly: true, Search: true},
-			{Name: "is_active", Kind: Bool},
+			{Name: "is_active", Kind: crud.Bool},
 		}
 		if kind == "prepaid" {
-			fields = append(fields, Field{Name: "base_price", Kind: Num, ReadOnly: true}, Field{Name: "selling_price", Kind: Num, Required: true, Min: F(0)})
+			fields = append(fields, crud.Field{Name: "base_price", Kind: crud.Num, ReadOnly: true}, crud.Field{Name: "selling_price", Kind: crud.Num, Required: true, Min: new(float64(0))})
 		} else {
-			fields = append(fields, Field{Name: "base_admin_fee", Kind: Num, ReadOnly: true}, Field{Name: "admin_fee", Kind: Num, Required: true, Min: F(0)})
+			fields = append(fields, crud.Field{Name: "base_admin_fee", Kind: crud.Num, ReadOnly: true}, crud.Field{Name: "admin_fee", Kind: crud.Num, Required: true, Min: new(float64(0))})
 		}
 		k := kind
-		res := &Resource{
+		res := &crud.Resource{
 			Name: "PPOB " + kind + " prices", Singular: "Price", Table: "ppob_prices", Where: "t.kind = '" + kind + "'", DefaultSort: "t.category, t.product_name",
 			ImportKey: "product_code", Fields: fields,
-			BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+			BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 				if id == "" {
 					return httpx.Forbidden("New PPOB products come from the provider catalog.")
 				}
@@ -266,7 +264,7 @@ func (a *API) sellPPOB(c fiber.Ctx) error {
 			Scan(&kind, &name, &base, &sell, &baseFee, &fee, &active); err != nil || !active {
 			return httpx.Invalid("price_id", "This PPOB product is not available.")
 		}
-		cost, price := 0.0, 0.0
+		var cost, price float64
 		if kind == "prepaid" {
 			cost, price = *base, *sell
 		} else {

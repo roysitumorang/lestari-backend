@@ -4,6 +4,7 @@ package export
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -25,7 +26,7 @@ type Column struct {
 // Value resolves a dotted key in a row.
 func Value(row map[string]any, key string) any {
 	var cur any = row
-	for _, part := range strings.Split(key, ".") {
+	for part := range strings.SplitSeq(key, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil
@@ -260,7 +261,7 @@ func ReadTable(filename string, r io.Reader) ([]string, [][]string, error) {
 		defer f.Close()
 		sheets := f.GetSheetList()
 		if len(sheets) == 0 {
-			return nil, nil, fmt.Errorf("the spreadsheet is empty")
+			return nil, nil, errors.New("the spreadsheet is empty")
 		}
 		all, err = f.GetRows(sheets[0])
 		if err != nil {
@@ -268,7 +269,7 @@ func ReadTable(filename string, r io.Reader) ([]string, [][]string, error) {
 		}
 	}
 	if len(all) == 0 {
-		return nil, nil, fmt.Errorf("the file has no header row")
+		return nil, nil, errors.New("the file has no header row")
 	}
 	head := make([]string, len(all[0]))
 	for i, h := range all[0] {

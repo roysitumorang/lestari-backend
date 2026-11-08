@@ -2,42 +2,43 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
 )
 
-func (a *API) purchaseResource() *Resource {
-	return &Resource{
+func (a *API) purchaseResource() *crud.Resource {
+	return &crud.Resource{
 		Name: "Purchases", Singular: "Purchase", Table: "purchases", DefaultSort: "t.purchase_date DESC, t.id DESC",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "receipt_number", ReadOnly: true, Search: true},
-			{Name: "supplier_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "supplier", Table: "suppliers"}},
+			{Name: "supplier_id", Kind: crud.UUID, Filter: true, Ref: &crud.Ref{Key: "supplier", Table: "suppliers"}},
 			{Name: "supplier_name", Expr: "(SELECT name FROM suppliers WHERE id = t.supplier_id)", Search: true},
-			{Name: "purchase_date", Kind: Date, Required: true},
+			{Name: "purchase_date", Kind: crud.Date, Required: true},
 			{Name: "invoice_number", Search: true},
 			{Name: "payment_type", Required: true, Enum: en("cash", "credit"), Default: "cash", Filter: true},
 			{Name: "payment_method", Enum: salesPaymentTypes},
-			{Name: "due_date", Kind: Date},
-			{Name: "paid_amount", Kind: Num, Min: F(0)},
-			{Name: "subtotal", Kind: Num, ReadOnly: true},
-			{Name: "discount_total", Kind: Num, Min: F(0), Default: 0.0},
-			{Name: "tax_total", Kind: Num, Min: F(0), Default: 0.0},
-			{Name: "fee_total", Kind: Num, Min: F(0), Default: 0.0},
-			{Name: "grand_total", Kind: Num, ReadOnly: true},
+			{Name: "due_date", Kind: crud.Date},
+			{Name: "paid_amount", Kind: crud.Num, Min: new(float64(0))},
+			{Name: "subtotal", Kind: crud.Num, ReadOnly: true},
+			{Name: "discount_total", Kind: crud.Num, Min: new(float64(0)), Default: 0.0},
+			{Name: "tax_total", Kind: crud.Num, Min: new(float64(0)), Default: 0.0},
+			{Name: "fee_total", Kind: crud.Num, Min: new(float64(0)), Default: 0.0},
+			{Name: "grand_total", Kind: crud.Num, ReadOnly: true},
 			{Name: "staff_name", ReadOnly: true},
 			{Name: "status", ReadOnly: true},
 			{Name: "note"},
-			{Name: "items", Kind: JSON, Virtual: true, Required: true},
+			{Name: "items", Kind: crud.JSON, Virtual: true, Required: true},
 		},
-		Filters: []Filter{dateFrom("t.purchase_date"), dateTo("t.purchase_date")},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		Filters: []crud.Filter{dateFrom("t.purchase_date"), dateTo("t.purchase_date")},
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id == "" {
 				num, err := a.nextNumber(ctx, h.Tx, "PO", "purchases", "receipt_number", "branch_id", h.P.BranchID)
 				if err != nil {
@@ -47,7 +48,7 @@ func (a *API) purchaseResource() *Resource {
 			}
 			return nil
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
+		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
 			if !created {
 				if _, ok := h.Body["items"]; !ok {
 					return a.recalcPurchase(ctx, h.Tx, h.P, id)
@@ -61,7 +62,7 @@ func (a *API) purchaseResource() *Resource {
 			}
 			return a.recalcPurchase(ctx, h.Tx, h.P, id)
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
+		BeforeDelete: func(ctx context.Context, h *crud.Ctx, id string) error {
 			return a.reversePurchaseItems(ctx, h.Tx, h.P, id, "Purchase deleted")
 		},
 		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
@@ -145,7 +146,8 @@ func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Prin
 	rows.Close()
 	for _, x := range items {
 		if _, err := productStock(ctx, tx, p.BranchID, x.pid, -x.qty, "purchase", ref, nil, p.UserID, p.Name, note); err != nil {
-			if he, ok := err.(*httpx.Error); ok && he.Status == 422 {
+			he := &httpx.Error{}
+			if errors.As(err, &he) {
 				continue // product deleted meanwhile
 			}
 			return err
@@ -304,44 +306,44 @@ func trimNum(f float64) string { return fmt.Sprintf("%g", f) }
 // ---------- cash in / out ----------
 
 func (a *API) registerFinance() {
-	a.CRUD.Register(a.addH, "/finance-entries", &Resource{
+	a.CRUD.Register(a.addH, "/finance-entries", &crud.Resource{
 		Name: "Finance entries", Singular: "Entry", Table: "finance_entries", DefaultSort: "t.entry_date DESC, t.id DESC",
-		Fields: []Field{
-			{Name: "entry_date", Kind: Date, Required: true},
+		Fields: []crud.Field{
+			{Name: "entry_date", Kind: crud.Date, Required: true},
 			{Name: "type", Required: true, Enum: en("income", "expense"), Filter: true},
 			{Name: "category", Required: true, Search: true},
-			{Name: "amount", Kind: Num, Required: true, Min: F(0)},
+			{Name: "amount", Kind: crud.Num, Required: true, Min: new(float64(0))},
 			{Name: "payment_method", Enum: salesPaymentTypes},
-			{Name: "cash_drawer_id", Kind: UUID, Ref: &Ref{Key: "cash_drawer", Table: "cash_drawers"}},
+			{Name: "cash_drawer_id", Kind: crud.UUID, Ref: &crud.Ref{Key: "cash_drawer", Table: "cash_drawers"}},
 			{Name: "description", Search: true},
 			{Name: "attachment_url"},
 		},
-		Filters: []Filter{dateFrom("t.entry_date"), dateTo("t.entry_date")},
+		Filters: []crud.Filter{dateFrom("t.entry_date"), dateTo("t.entry_date")},
 	}, "list", "create", "read", "update", "delete", "export")
 }
 
 // ---------- debts ----------
 
-func (a *API) debtResource(kind string) *Resource {
+func (a *API) debtResource(kind string) *crud.Resource {
 	party, table := "supplier", "suppliers"
 	if kind == "receivable" {
 		party, table = "customer", "customers"
 	}
-	return &Resource{
+	return &crud.Resource{
 		Name: map[string]string{"payable": "Payables", "receivable": "Receivables"}[kind], Singular: map[string]string{"payable": "Payable", "receivable": "Receivable"}[kind],
 		Table: "debts", Where: "t.kind = '" + kind + "'", DefaultSort: "t.status DESC, t.due_date NULLS LAST, t.id DESC",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "reference_number", ReadOnly: true, Search: true},
-			{Name: party + "_id", Kind: UUID, ReadOnly: true, Filter: true, Ref: &Ref{Key: party, Table: table}},
+			{Name: party + "_id", Kind: crud.UUID, ReadOnly: true, Filter: true, Ref: &crud.Ref{Key: party, Table: table}},
 			{Name: party + "_name", Expr: "(SELECT name FROM " + table + " WHERE id = t." + party + "_id)", Search: true},
-			{Name: "transaction_date", Kind: Date, ReadOnly: true},
-			{Name: "due_date", Kind: Date, ReadOnly: true},
-			{Name: "total_amount", Kind: Num, ReadOnly: true},
-			{Name: "paid_amount", Kind: Num, ReadOnly: true},
-			{Name: "remaining_amount", Kind: Num, Expr: "GREATEST(t.total_amount - t.paid_amount, 0)"},
+			{Name: "transaction_date", Kind: crud.Date, ReadOnly: true},
+			{Name: "due_date", Kind: crud.Date, ReadOnly: true},
+			{Name: "total_amount", Kind: crud.Num, ReadOnly: true},
+			{Name: "paid_amount", Kind: crud.Num, ReadOnly: true},
+			{Name: "remaining_amount", Kind: crud.Num, Expr: "GREATEST(t.total_amount - t.paid_amount, 0)"},
 			{Name: "status", ReadOnly: true, Filter: true},
 		},
-		Filters: []Filter{{Param: "overdue", SQL: "(? <> 'true' OR (t.due_date < current_date AND t.status <> 'paid'))"}},
+		Filters: []crud.Filter{{Param: "overdue", SQL: "(? <> 'true' OR (t.due_date < current_date AND t.status <> 'paid'))"}},
 		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
 			pays, err := db.JSONRows(ctx, q, `SELECT id, payment_date, amount, payment_method, note FROM debt_payments WHERE debt_id=$1 ORDER BY payment_date, id`, row["id"])
 			row["payments"] = pays
@@ -359,7 +361,7 @@ func (a *API) registerDebts() {
 	}
 }
 
-func (a *API) payDebt(res *Resource) fiber.Handler {
+func (a *API) payDebt(res *crud.Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		id, err := httpx.ParamID(c, "id")
 		if err != nil {
@@ -434,19 +436,19 @@ func (a *API) payDebt(res *Resource) fiber.Handler {
 
 // ---------- returns ----------
 
-func (a *API) returnResource(kind string) *Resource {
-	r := &Resource{
+func (a *API) returnResource(kind string) *crud.Resource {
+	r := &crud.Resource{
 		Table: "returns", Where: "t.kind = '" + kind + "'", DefaultSort: "t.created_at DESC, t.id DESC", NoTimestamps: true,
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "return_number", ReadOnly: true, Search: true},
-			{Name: "created_at", Kind: Timestamp, ReadOnly: true},
+			{Name: "created_at", Kind: crud.Timestamp, ReadOnly: true},
 			{Name: "refund_method", ReadOnly: true},
-			{Name: "refund_amount", Kind: Num, ReadOnly: true},
+			{Name: "refund_amount", Kind: crud.Num, ReadOnly: true},
 			{Name: "reason", ReadOnly: true},
 			{Name: "cashier_name", ReadOnly: true},
-			{Name: "item_count", Kind: Int, Expr: "(SELECT count(*) FROM return_items ri WHERE ri.return_id = t.id)"},
+			{Name: "item_count", Kind: crud.Int, Expr: "(SELECT count(*) FROM return_items ri WHERE ri.return_id = t.id)"},
 		},
-		Filters: []Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
+		Filters: []crud.Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
 		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
 			items, err := db.JSONRows(ctx, q, `SELECT product_id, product_name, quantity, unit_price, unit_price AS unit_cost, subtotal FROM return_items WHERE return_id=$1 ORDER BY id`, row["id"])
 			row["items"] = items
@@ -456,16 +458,16 @@ func (a *API) returnResource(kind string) *Resource {
 	if kind == "sale" {
 		r.Name, r.Singular = "Sales returns", "Sales return"
 		r.Fields = append(r.Fields,
-			Field{Name: "sale_id", Kind: UUID, ReadOnly: true},
-			Field{Name: "receipt_number", Expr: "(SELECT receipt_number FROM sales WHERE id = t.sale_id)", Search: true},
-			Field{Name: "customer", Expr: "(SELECT json_build_object('id', c.id, 'name', c.name) FROM sales s JOIN customers c ON c.id = s.customer_id WHERE s.id = t.sale_id)"},
+			crud.Field{Name: "sale_id", Kind: crud.UUID, ReadOnly: true},
+			crud.Field{Name: "receipt_number", Expr: "(SELECT receipt_number FROM sales WHERE id = t.sale_id)", Search: true},
+			crud.Field{Name: "customer", Expr: "(SELECT json_build_object('id', c.id, 'name', c.name) FROM sales s JOIN customers c ON c.id = s.customer_id WHERE s.id = t.sale_id)"},
 		)
 	} else {
 		r.Name, r.Singular = "Purchase returns", "Purchase return"
 		r.Fields = append(r.Fields,
-			Field{Name: "purchase_id", Kind: UUID, ReadOnly: true},
-			Field{Name: "purchase_number", Expr: "(SELECT receipt_number FROM purchases WHERE id = t.purchase_id)", Search: true},
-			Field{Name: "supplier", Expr: "(SELECT json_build_object('id', s.id, 'name', s.name) FROM purchases pu JOIN suppliers s ON s.id = pu.supplier_id WHERE pu.id = t.purchase_id)"},
+			crud.Field{Name: "purchase_id", Kind: crud.UUID, ReadOnly: true},
+			crud.Field{Name: "purchase_number", Expr: "(SELECT receipt_number FROM purchases WHERE id = t.purchase_id)", Search: true},
+			crud.Field{Name: "supplier", Expr: "(SELECT json_build_object('id', s.id, 'name', s.name) FROM purchases pu JOIN suppliers s ON s.id = pu.supplier_id WHERE pu.id = t.purchase_id)"},
 		)
 	}
 	return r

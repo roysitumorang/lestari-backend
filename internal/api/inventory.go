@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
@@ -39,23 +40,23 @@ func (a *API) startJob(storeID string, kind string, payload any, fn func(ctx con
 	return id, nil
 }
 
-func (a *API) stockResource() *Resource {
-	return &Resource{
+func (a *API) stockResource() *crud.Resource {
+	return &crud.Resource{
 		Name: "Stock", Singular: "Stock", Table: "products", IDName: "product_id", SoftDelete: true,
 		Where: "t.track_stock", DefaultSort: "t.name",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "image_url", ReadOnly: true},
 			{Name: "name", ReadOnly: true, Search: true},
 			{Name: "sku", ReadOnly: true, Search: true},
-			{Name: "category_id", Kind: UUID, ReadOnly: true, Filter: true},
+			{Name: "category_id", Kind: crud.UUID, ReadOnly: true, Filter: true},
 			{Name: "category_name", Expr: "(SELECT name FROM categories WHERE id = t.category_id)"},
-			{Name: "stock", Kind: Num, ReadOnly: true},
+			{Name: "stock", Kind: crud.Num, ReadOnly: true},
 			{Name: "unit", ReadOnly: true},
-			{Name: "minimum_stock", Kind: Num, ReadOnly: true},
-			{Name: "unit_cost", Kind: Num, Expr: "t.purchase_price"},
-			{Name: "stock_value", Kind: Num, Expr: "round(GREATEST(t.stock, 0) * t.purchase_price, 2)"},
+			{Name: "minimum_stock", Kind: crud.Num, ReadOnly: true},
+			{Name: "unit_cost", Kind: crud.Num, Expr: "t.purchase_price"},
+			{Name: "stock_value", Kind: crud.Num, Expr: "round(GREATEST(t.stock, 0) * t.purchase_price, 2)"},
 		},
-		Filters: []Filter{stockStatusFilter},
+		Filters: []crud.Filter{stockStatusFilter},
 	}
 }
 
@@ -168,26 +169,26 @@ func (a *API) stockMovements(c fiber.Ctx) error {
 }
 
 func (a *API) importStock(c fiber.Ctx) error {
-	rows, err := ImportRows(c)
+	rows, err := crud.ImportRows(c)
 	if err != nil {
 		return err
 	}
 	p := httpx.P(c)
-	res := ImportResult{Errors: []ImportError{}}
+	res := crud.ImportResult{Errors: []crud.ImportError{}}
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		for i, r := range rows {
 			sku := httpx.Str(r, "sku")
 			qty, ok := httpx.Num(r, "stock")
 			if sku == "" || !ok {
 				res.Failed++
-				res.Errors = append(res.Errors, ImportError{Row: i + 2, Message: "sku and stock are required"})
+				res.Errors = append(res.Errors, crud.ImportError{Row: i + 2, Message: "sku and stock are required"})
 				continue
 			}
 			var id string
 			var cur float64
 			if err := tx.QueryRow(c.Context(), `SELECT id, stock FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND deleted_at IS NULL`, p.BranchID, sku).Scan(&id, &cur); err != nil {
 				res.Failed++
-				res.Errors = append(res.Errors, ImportError{Row: i + 2, Message: "No product with SKU " + sku})
+				res.Errors = append(res.Errors, crud.ImportError{Row: i + 2, Message: "No product with SKU " + sku})
 				continue
 			}
 			var cost *float64
@@ -232,22 +233,22 @@ func (a *API) recalculateStock(c fiber.Ctx) error {
 
 // ---------- stock opname ----------
 
-func (a *API) opnameResource() *Resource {
-	return &Resource{
+func (a *API) opnameResource() *crud.Resource {
+	return &crud.Resource{
 		Name: "Stock opnames", Singular: "Stock opname", Table: "stock_opnames", DefaultSort: "t.opname_date DESC, t.id DESC",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "code", ReadOnly: true, Search: true},
-			{Name: "opname_date", Kind: Date, Required: true},
+			{Name: "opname_date", Kind: crud.Date, Required: true},
 			{Name: "performed_by_name", Required: true, Search: true},
 			{Name: "performed_by_role", Required: true, Enum: en("owner", "administrator", "manager", "cashier")},
 			{Name: "status", ReadOnly: true, Filter: true},
 			{Name: "note"},
 			{Name: "reject_reason", ReadOnly: true},
-			{Name: "item_count", Kind: Int, Expr: "(SELECT count(*) FROM stock_opname_items i WHERE i.opname_id = t.id)"},
-			{Name: "difference_value", Kind: Num, Expr: "(SELECT COALESCE(sum((i.physical_stock - i.system_stock) * i.unit_cost), 0) FROM stock_opname_items i WHERE i.opname_id = t.id)"},
-			{Name: "items", Kind: JSON, Virtual: true, Required: true},
+			{Name: "item_count", Kind: crud.Int, Expr: "(SELECT count(*) FROM stock_opname_items i WHERE i.opname_id = t.id)"},
+			{Name: "difference_value", Kind: crud.Num, Expr: "(SELECT COALESCE(sum((i.physical_stock - i.system_stock) * i.unit_cost), 0) FROM stock_opname_items i WHERE i.opname_id = t.id)"},
+			{Name: "items", Kind: crud.JSON, Virtual: true, Required: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id != "" {
 				return httpx.Conflict("A stock opname cannot be edited; delete it and create a new one.")
 			}
@@ -255,10 +256,10 @@ func (a *API) opnameResource() *Resource {
 			vals["code"] = code
 			return err
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
+		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
 			return a.saveOpnameItems(ctx, h.Tx, h.P.BranchID, id, httpx.Items(h.Body, "items"))
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
+		BeforeDelete: func(ctx context.Context, h *crud.Ctx, id string) error {
 			var status string
 			if err := h.Tx.QueryRow(ctx, `SELECT status FROM stock_opnames WHERE id=$1`, id).Scan(&status); err != nil {
 				return err
@@ -408,18 +409,18 @@ func (a *API) registerOpnames() {
 		return export.Send(c, "stock-opname-template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b)
 	})
 	a.addH("POST", "/stock-opnames/import", func(c fiber.Ctx) error {
-		rows, err := ImportRows(c)
+		rows, err := crud.ImportRows(c)
 		if err != nil {
 			return err
 		}
 		p := httpx.P(c)
 		items := []any{}
-		result := ImportResult{Errors: []ImportError{}}
+		result := crud.ImportResult{Errors: []crud.ImportError{}}
 		for i, r := range rows {
 			var pid string
 			if err := a.DB.QueryRow(c.Context(), `SELECT id FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND deleted_at IS NULL`, p.BranchID, httpx.Str(r, "sku")).Scan(&pid); err != nil {
 				result.Failed++
-				result.Errors = append(result.Errors, ImportError{Row: i + 2, Message: "No product with SKU " + httpx.Str(r, "sku")})
+				result.Errors = append(result.Errors, crud.ImportError{Row: i + 2, Message: "No product with SKU " + httpx.Str(r, "sku")})
 				continue
 			}
 			qty, _ := httpx.Num(r, "physical_stock")
@@ -438,10 +439,5 @@ func (a *API) registerOpnames() {
 }
 
 func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }

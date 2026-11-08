@@ -5,6 +5,7 @@ package crud
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -872,7 +873,7 @@ func toList(raw any) ([]any, bool) {
 		return x, true
 	case string:
 		var out []any
-		for _, s := range strings.Split(x, ",") {
+		for s := range strings.SplitSeq(x, ",") {
 			if s = strings.TrimSpace(s); s != "" {
 				out = append(out, s)
 			}
@@ -914,13 +915,10 @@ func encode(k Kind, v any) any {
 }
 
 func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // F is shorthand for float pointers in Min/Max.
-func F(v float64) *float64 { return &v }
+//
+//go:fix inline
+func F(v float64) *float64 { return new(v) }

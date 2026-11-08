@@ -10,29 +10,29 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/roysitumorang/lestari-backend/internal/auth"
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
 )
 
-// gated returns an add function whose routes require a plugin.
-func (a *API) gated(plugin string) func(method, path string, h fiber.Handler) {
-	return func(method, path string, h fiber.Handler) { a.add(method, path, auth.RequirePlugin(plugin), h) }
+// businessOnly returns an add function whose routes require the business plugin.
+func (a *API) businessOnly() func(method, path string, h fiber.Handler) {
+	return func(method, path string, h fiber.Handler) { a.add(method, path, auth.RequirePlugin("business"), h) }
 }
 
 func (a *API) registerContacts() {
-	customers := &Resource{
+	customers := &crud.Resource{
 		Name: "Customers", Singular: "Customer", Table: "customers", ImportKey: "code", DefaultSort: "t.name",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "name", Required: true, Search: true},
 			{Name: "phone", Search: true},
 			{Name: "email", Search: true},
 			{Name: "code", Search: true},
-			{Name: "customer_type_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "customer_type", Table: "customer_types"}},
-			{Name: "birth_date", Kind: Date},
-			{Name: "points", Kind: Int, ReadOnly: true},
-			{Name: "receivable_balance", Kind: Num, Expr: "(SELECT COALESCE(sum(d.total_amount - d.paid_amount), 0) FROM debts d WHERE d.customer_id = t.id AND d.kind = 'receivable' AND d.status <> 'paid')"},
+			{Name: "customer_type_id", Kind: crud.UUID, Filter: true, Ref: &crud.Ref{Key: "customer_type", Table: "customer_types"}},
+			{Name: "birth_date", Kind: crud.Date},
+			{Name: "points", Kind: crud.Int, ReadOnly: true},
+			{Name: "receivable_balance", Kind: crud.Num, Expr: "(SELECT COALESCE(sum(d.total_amount - d.paid_amount), 0) FROM debts d WHERE d.customer_id = t.id AND d.kind = 'receivable' AND d.status <> 'paid')"},
 			{Name: "address"},
 			{Name: "note"},
 		},
@@ -43,30 +43,30 @@ func (a *API) registerContacts() {
 	a.addH("GET", "/customers/qr-codes", a.customerQRCodes)
 	a.addH("POST", "/customers/points/import", a.importPoints)
 
-	customerTypes := &Resource{
+	customerTypes := &crud.Resource{
 		Name: "Customer types", Singular: "Customer type", Table: "customer_types", DefaultSort: "t.name",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "name", Required: true, Search: true},
 			{Name: "discount_type", Enum: en("percent", "amount")},
-			{Name: "discount_value", Kind: Num, Min: F(0)},
-			{Name: "point_multiplier", Kind: Num, Min: F(0), Default: 1.0},
-			{Name: "customer_count", Kind: Int, Expr: "(SELECT count(*) FROM customers c WHERE c.customer_type_id = t.id)"},
+			{Name: "discount_value", Kind: crud.Num, Min: new(float64(0))},
+			{Name: "point_multiplier", Kind: crud.Num, Min: new(float64(0)), Default: 1.0},
+			{Name: "customer_count", Kind: crud.Int, Expr: "(SELECT count(*) FROM customers c WHERE c.customer_type_id = t.id)"},
 			{Name: "description"},
 		},
 	}
 	// listing stays open so lookups work everywhere; changes need the business plugin
 	a.CRUD.Register(a.addH, "/customer-types", customerTypes, "list", "read")
-	a.CRUD.Register(a.gated("business"), "/customer-types", customerTypes, "create", "update", "delete")
+	a.CRUD.Register(a.businessOnly(), "/customer-types", customerTypes, "create", "update", "delete")
 
-	suppliers := &Resource{
+	suppliers := &crud.Resource{
 		Name: "Suppliers", Singular: "Supplier", Table: "suppliers", ImportKey: "code", DefaultSort: "t.name",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "name", Required: true, Search: true},
 			{Name: "contact_person", Search: true},
 			{Name: "phone", Search: true},
 			{Name: "email", Search: true},
 			{Name: "code", Search: true},
-			{Name: "payable_balance", Kind: Num, Expr: "(SELECT COALESCE(sum(d.total_amount - d.paid_amount), 0) FROM debts d WHERE d.supplier_id = t.id AND d.kind = 'payable' AND d.status <> 'paid')"},
+			{Name: "payable_balance", Kind: crud.Num, Expr: "(SELECT COALESCE(sum(d.total_amount - d.paid_amount), 0) FROM debts d WHERE d.supplier_id = t.id AND d.kind = 'payable' AND d.status <> 'paid')"},
 			{Name: "address"},
 		},
 	}
@@ -192,7 +192,7 @@ func (a *API) customerQRCodes(c fiber.Ctx) error {
 }
 
 func (a *API) importPoints(c fiber.Ctx) error {
-	rows, err := ImportRows(c)
+	rows, err := crud.ImportRows(c)
 	if err != nil {
 		return err
 	}
@@ -200,21 +200,21 @@ func (a *API) importPoints(c fiber.Ctx) error {
 	p := httpx.P(c)
 	res := fiber.Map{}
 	updated, failed := 0, 0
-	errs := []ImportError{}
+	errs := []crud.ImportError{}
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		for i, r := range rows {
 			code := httpx.Str(r, "code")
 			pts, ok := httpx.Num(r, "points")
 			if code == "" || !ok {
 				failed++
-				errs = append(errs, ImportError{Row: i + 2, Message: "code and points are required"})
+				errs = append(errs, crud.ImportError{Row: i + 2, Message: "code and points are required"})
 				continue
 			}
 			var id string
 			var cur int
 			if err := tx.QueryRow(c.Context(), `SELECT id, points FROM customers WHERE branch_id=$1 AND code=$2`, p.BranchID, code).Scan(&id, &cur); err != nil {
 				failed++
-				errs = append(errs, ImportError{Row: i + 2, Message: "No customer with code " + code})
+				errs = append(errs, crud.ImportError{Row: i + 2, Message: "No customer with code " + code})
 				continue
 			}
 			delta := int(pts)

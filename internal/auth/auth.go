@@ -5,13 +5,15 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // RFC 6238 TOTP is defined over HMAC-SHA1; authenticator apps expect it
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,12 +59,11 @@ type Tokens struct {
 
 func (s *Service) Issue(ctx context.Context, userID, storeID string, remember bool) (Tokens, error) {
 	now := time.Now()
-	claims := Claims{StoreID: storeID, RegisteredClaims: jwt.RegisteredClaims{
+	claims := Claims{StoreID: storeID,
 		Subject:   userID,
 		IssuedAt:  jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(s.AccessTTL)),
-		Issuer:    "lestari",
-	}}
+		Issuer:    "lestari"}
 	access, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.Secret)
 	if err != nil {
 		return Tokens{}, err
@@ -104,7 +105,7 @@ func (s *Service) parse(token string) (*Claims, error) {
 	claims := &Claims{}
 	_, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
 		if t.Method != jwt.SigningMethodHS256 {
-			return nil, fmt.Errorf("unexpected signing method")
+			return nil, errors.New("unexpected signing method")
 		}
 		return s.Secret, nil
 	}, jwt.WithIssuer("lestari"), jwt.WithExpirationRequired())
@@ -178,10 +179,8 @@ func RequirePlugin(code string) fiber.Handler {
 func RequireRole(roles ...string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		r := httpx.P(c).Role
-		for _, x := range roles {
-			if x == r {
-				return c.Next()
-			}
+		if slices.Contains(roles, r) {
+			return c.Next()
 		}
 		return httpx.Forbidden("Your role cannot do this.")
 	}
@@ -198,9 +197,9 @@ func RandomToken(n int) string {
 // RandomDigits returns a numeric code such as an OTP.
 func RandomDigits(n int) string {
 	var sb strings.Builder
-	for i := 0; i < n; i++ {
+	for range n {
 		d, _ := rand.Int(rand.Reader, big.NewInt(10))
-		sb.WriteByte(byte('0' + d.Int64()))
+		sb.WriteByte("0123456789"[d.Int64()])
 	}
 	return sb.String()
 }
@@ -218,13 +217,16 @@ func NewTOTPSecret() string {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)
 }
 
-func totpAt(secret string, counter uint64) (string, error) {
+func totpAt(secret string, step int64) (string, error) {
 	key, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(strings.TrimSpace(secret)))
 	if err != nil {
 		return "", err
 	}
-	var msg [8]byte
-	binary.BigEndian.PutUint64(msg[:], counter)
+	var msg [8]byte // big-endian time step
+	for i := 7; i >= 0; i-- {
+		msg[i] = byte(step & 0xff)
+		step >>= 8
+	}
 	m := hmac.New(sha1.New, key)
 	m.Write(msg[:])
 	sum := m.Sum(nil)
@@ -239,9 +241,9 @@ func VerifyTOTP(secret, code string) bool {
 	if len(code) != 6 {
 		return false
 	}
-	now := uint64(time.Now().Unix() / 30)
+	now := time.Now().Unix() / 30
 	for _, d := range []int64{-1, 0, 1} {
-		want, err := totpAt(secret, uint64(int64(now)+d))
+		want, err := totpAt(secret, now+d)
 		if err == nil && hmac.Equal([]byte(want), []byte(code)) {
 			return true
 		}
@@ -251,7 +253,7 @@ func VerifyTOTP(secret, code string) bool {
 
 // TOTPCode returns the current code (used by tests).
 func TOTPCode(secret string) string {
-	c, _ := totpAt(secret, uint64(time.Now().Unix()/30))
+	c, _ := totpAt(secret, time.Now().Unix()/30)
 	return c
 }
 

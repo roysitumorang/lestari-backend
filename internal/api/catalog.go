@@ -10,51 +10,51 @@ import (
 	"github.com/jackc/pgx/v5"
 	qrcode "github.com/skip2/go-qrcode"
 
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
 )
 
-var stockStatusFilter = Filter{Param: "stock_status", SQL: `(CASE ? WHEN 'in_stock' THEN t.stock > 0 WHEN 'low' THEN t.minimum_stock IS NOT NULL AND t.stock <= t.minimum_stock AND t.stock > 0 WHEN 'out' THEN t.stock <= 0 ELSE true END)`}
+var stockStatusFilter = crud.Filter{Param: "stock_status", SQL: `(CASE ? WHEN 'in_stock' THEN t.stock > 0 WHEN 'low' THEN t.minimum_stock IS NOT NULL AND t.stock <= t.minimum_stock AND t.stock > 0 WHEN 'out' THEN t.stock <= 0 ELSE true END)`}
 
-func (a *API) productResource() *Resource {
-	return &Resource{
+func (a *API) productResource() *crud.Resource {
+	return &crud.Resource{
 		Name: "Products", Singular: "Product", Table: "products", SoftDelete: true, ImportKey: "sku",
 		Where: "t.item_type IS NOT NULL",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "image_url"},
 			{Name: "name", Required: true, Search: true},
 			{Name: "item_type", Enum: en("product", "service"), Default: "product", Filter: true},
 			{Name: "sku", Search: true},
 			{Name: "barcode", Search: true},
-			{Name: "category_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "category", Table: "categories"}},
+			{Name: "category_id", Kind: crud.UUID, Filter: true, Ref: &crud.Ref{Key: "category", Table: "categories"}},
 			{Name: "unit"},
-			{Name: "selling_price", Kind: Num, Required: true, Min: F(0)},
-			{Name: "purchase_price", Kind: Num, Min: F(0), Default: 0.0},
+			{Name: "selling_price", Kind: crud.Num, Required: true, Min: new(float64(0))},
+			{Name: "purchase_price", Kind: crud.Num, Min: new(float64(0)), Default: 0.0},
 			{Name: "price_type", Enum: en("single", "wholesale", "customer_type"), Default: "single"},
-			{Name: "tax_id", Kind: UUID, Ref: &Ref{Key: "tax", Table: "taxes"}},
+			{Name: "tax_id", Kind: crud.UUID, Ref: &crud.Ref{Key: "tax", Table: "taxes"}},
 			{Name: "discount_type", Enum: en("percent", "amount")},
-			{Name: "discount_value", Kind: Num, Min: F(0)},
-			{Name: "wholesale_prices", Kind: JSON, Default: []any{}},
-			{Name: "customer_type_prices", Kind: JSON, Default: []any{}},
-			{Name: "track_stock", Kind: Bool, Default: true},
-			{Name: "stock", Kind: Num, CreateOnly: true, Default: 0.0},
-			{Name: "minimum_stock", Kind: Num, Min: F(0)},
+			{Name: "discount_value", Kind: crud.Num, Min: new(float64(0))},
+			{Name: "wholesale_prices", Kind: crud.JSON, Default: []any{}},
+			{Name: "customer_type_prices", Kind: crud.JSON, Default: []any{}},
+			{Name: "track_stock", Kind: crud.Bool, Default: true},
+			{Name: "stock", Kind: crud.Num, CreateOnly: true, Default: 0.0},
+			{Name: "minimum_stock", Kind: crud.Num, Min: new(float64(0))},
 			{Name: "shelf_location"},
-			{Name: "weight_grams", Kind: Num, Min: F(0)},
-			{Name: "track_imei", Kind: Bool, Default: false},
-			{Name: "units", Kind: JSON, Default: []any{}},
-			{Name: "variants", Kind: JSON, Default: []any{}},
-			{Name: "ingredients", Kind: JSON, Default: []any{}},
-			{Name: "points_earned", Kind: Num, Min: F(0)},
-			{Name: "points_to_redeem", Kind: Num, Min: F(0)},
-			{Name: "show_in_online_store", Kind: Bool, Default: true},
+			{Name: "weight_grams", Kind: crud.Num, Min: new(float64(0))},
+			{Name: "track_imei", Kind: crud.Bool, Default: false},
+			{Name: "units", Kind: crud.JSON, Default: []any{}},
+			{Name: "variants", Kind: crud.JSON, Default: []any{}},
+			{Name: "ingredients", Kind: crud.JSON, Default: []any{}},
+			{Name: "points_earned", Kind: crud.Num, Min: new(float64(0))},
+			{Name: "points_to_redeem", Kind: crud.Num, Min: new(float64(0))},
+			{Name: "show_in_online_store", Kind: crud.Bool, Default: true},
 			{Name: "description"},
 			{Name: "online_description"},
 		},
-		Filters: []Filter{stockStatusFilter},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		Filters: []crud.Filter{stockStatusFilter},
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id == "" && (vals["sku"] == nil || vals["sku"] == "") {
 				sku, err := nextSKU(ctx, h.Tx, h.P.BranchID)
 				if err != nil {
@@ -67,7 +67,7 @@ func (a *API) productResource() *Resource {
 			}
 			return nil
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
+		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
 			if !created {
 				return nil
 			}
@@ -151,13 +151,13 @@ func (a *API) registerCatalog() {
 		return export.Send(c, "labels.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b)
 	})
 
-	categories := &Resource{
+	categories := &crud.Resource{
 		Name: "Categories", Singular: "Category", Table: "categories", DefaultSort: "t.sort_order NULLS LAST, t.name",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "name", Required: true, Search: true},
 			{Name: "color"},
-			{Name: "sort_order", Kind: Int},
-			{Name: "product_count", Kind: Int, Expr: "(SELECT count(*) FROM products p WHERE p.category_id = t.id AND p.deleted_at IS NULL)"},
+			{Name: "sort_order", Kind: crud.Int},
+			{Name: "product_count", Kind: crud.Int, Expr: "(SELECT count(*) FROM products p WHERE p.category_id = t.id AND p.deleted_at IS NULL)"},
 			{Name: "description"},
 		},
 	}
@@ -202,17 +202,11 @@ func (a *API) productBarcodes(c fiber.Ctx) error {
 	if w < 200 {
 		margin = 0
 	}
-	cols := int((w - 2*margin) / cellW)
-	if cols < 1 {
-		cols = 1
-	}
-	perPage := cols * int((h-2*margin)/cellH)
-	if perPage < 1 {
-		perPage = 1
-	}
+	cols := max(int((w-2*margin)/cellW), 1)
+	perPage := max(cols*int((h-2*margin)/cellH), 1)
 	i := 0
 	for _, r := range rows {
-		for k := 0; k < copies; k++ {
+		for range copies {
 			if i%perPage == 0 {
 				d.Page()
 			}

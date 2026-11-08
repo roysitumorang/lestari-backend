@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -13,7 +14,7 @@ import (
 
 // ExportColumns lists scalar fields plus referenced labels.
 func (r *Resource) ExportColumns() []export.Column {
-	cols := []export.Column{{Key: r.idName(), Label: r.idName(), Format: "number"}}
+	cols := []export.Column{{Key: r.idName(), Label: r.idName()}} // UUID, exported as text
 	for _, f := range r.Fields {
 		if f.NoExport || f.Virtual || f.Kind == Password || f.Kind == PIN || f.Kind == JSON {
 			continue
@@ -172,7 +173,8 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 }
 
 func describe(err error) string {
-	if he, ok := err.(*httpx.Error); ok {
+	he := &httpx.Error{}
+	if errors.As(err, &he) {
 		if len(he.Fields) > 0 {
 			var parts []string
 			for k, v := range he.Fields {

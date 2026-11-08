@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,17 +13,17 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
 )
 
-func dateFrom(col string) Filter {
-	return Filter{Param: "start_date", SQL: col + " >= ?::date", Cast: isoDate}
+func dateFrom(col string) crud.Filter {
+	return crud.Filter{Param: "start_date", SQL: col + " >= ?::date", Cast: isoDate}
 }
-func dateTo(col string) Filter {
-	return Filter{Param: "end_date", SQL: col + " <= ?::date", Cast: isoDate}
+func dateTo(col string) crud.Filter {
+	return crud.Filter{Param: "end_date", SQL: col + " <= ?::date", Cast: isoDate}
 }
 
 func isoDate(s string) (any, bool) {
@@ -31,37 +33,37 @@ func isoDate(s string) (any, bool) {
 	return s, true
 }
 
-func (a *API) saleResource() *Resource {
-	return &Resource{
+func (a *API) saleResource() *crud.Resource {
+	return &crud.Resource{
 		Name: "Sales", Singular: "Sale", Table: "sales", DefaultSort: "t.created_at DESC, t.id DESC",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "receipt_number", ReadOnly: true, Search: true},
-			{Name: "cashier_id", Kind: UUID, ReadOnly: true, Filter: true},
+			{Name: "cashier_id", Kind: crud.UUID, ReadOnly: true, Filter: true},
 			{Name: "cashier_name", ReadOnly: true},
-			{Name: "customer_id", Kind: UUID, ReadOnly: true, Filter: true, Ref: &Ref{Key: "customer", Table: "customers"}},
+			{Name: "customer_id", Kind: crud.UUID, ReadOnly: true, Filter: true, Ref: &crud.Ref{Key: "customer", Table: "customers"}},
 			{Name: "customer_name", Expr: "(SELECT name FROM customers WHERE id = t.customer_id)", Search: true},
 			{Name: "payment_method", ReadOnly: true, Filter: true},
 			{Name: "payment_type", ReadOnly: true, Filter: true},
-			{Name: "subtotal", Kind: Num, ReadOnly: true},
-			{Name: "discount_total", Kind: Num, ReadOnly: true},
+			{Name: "subtotal", Kind: crud.Num, ReadOnly: true},
+			{Name: "discount_total", Kind: crud.Num, ReadOnly: true},
 			{Name: "tax_name", ReadOnly: true},
-			{Name: "tax_total", Kind: Num, ReadOnly: true},
-			{Name: "service_charge", Kind: Num, ReadOnly: true},
-			{Name: "fee_total", Kind: Num, ReadOnly: true},
-			{Name: "rounding", Kind: Num, ReadOnly: true},
-			{Name: "grand_total", Kind: Num, ReadOnly: true},
-			{Name: "paid_amount", Kind: Num, ReadOnly: true},
-			{Name: "change_amount", Kind: Num, ReadOnly: true},
-			{Name: "profit", Kind: Num, ReadOnly: true},
-			{Name: "points_earned", Kind: Int, ReadOnly: true},
-			{Name: "points_redeemed", Kind: Int, ReadOnly: true},
+			{Name: "tax_total", Kind: crud.Num, ReadOnly: true},
+			{Name: "service_charge", Kind: crud.Num, ReadOnly: true},
+			{Name: "fee_total", Kind: crud.Num, ReadOnly: true},
+			{Name: "rounding", Kind: crud.Num, ReadOnly: true},
+			{Name: "grand_total", Kind: crud.Num, ReadOnly: true},
+			{Name: "paid_amount", Kind: crud.Num, ReadOnly: true},
+			{Name: "change_amount", Kind: crud.Num, ReadOnly: true},
+			{Name: "profit", Kind: crud.Num, ReadOnly: true},
+			{Name: "points_earned", Kind: crud.Int, ReadOnly: true},
+			{Name: "points_redeemed", Kind: crud.Int, ReadOnly: true},
 			{Name: "label", ReadOnly: true, Search: true},
 			{Name: "customer_type", ReadOnly: true},
 			{Name: "note", ReadOnly: true},
 			{Name: "status", ReadOnly: true, Filter: true},
-			{Name: "due_date", Kind: Date, ReadOnly: true},
+			{Name: "due_date", Kind: crud.Date, ReadOnly: true},
 		},
-		Filters: []Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
+		Filters: []crud.Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
 		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
 			items, err := db.JSONRows(ctx, q, `SELECT id, product_id, product_name, variant_name, quantity, unit_price, discount_amount + promotion_discount AS discount_amount, subtotal, points_earned, points_redeemed
 				FROM sale_items WHERE sale_id = $1 ORDER BY id`, row["id"])
@@ -600,12 +602,7 @@ func (a *API) consumeStock(ctx context.Context, tx pgx.Tx, p *httpx.Principal, p
 }
 
 func containsID(list []string, id string) bool {
-	for _, x := range list {
-		if x == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, id)
 }
 
 // ---------- promotions in effect ----------
@@ -944,7 +941,7 @@ func (a *API) saleDeliveryNote(c fiber.Ctx) error {
 			d.Page()
 			y = 800
 		}
-		d.Text(46, y, 9, false, fmt.Sprint(i+1))
+		d.Text(46, y, 9, false, strconv.Itoa(i+1))
 		d.Text(70, y, 9, false, export.Fit(fmt.Sprint(it["product_name"]), 340, 9))
 		d.Text(420, y, 9, false, export.Thousands(num(it["quantity"])))
 		d.Rect(478, y-2, 10, 10, 0.85)

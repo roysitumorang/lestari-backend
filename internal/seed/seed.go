@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http/httptest"
+	"strconv"
 	"time"
 
 	"github.com/goccy/go-json"
@@ -30,6 +31,7 @@ const (
 )
 
 type client struct {
+	ctx    context.Context
 	app    *fiber.App
 	prefix string
 	token  string
@@ -46,7 +48,7 @@ func (c *client) do(method, path string, body any) map[string]any {
 		b, _ := json.Marshal(body)
 		r = bytes.NewReader(b)
 	}
-	req := httptest.NewRequest(method, c.prefix+path, r)
+	req := httptest.NewRequestWithContext(c.ctx, method, c.prefix+path, r)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	if c.branch != "" {
@@ -113,8 +115,8 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	if err != nil {
 		return info, err
 	}
-	c := &client{app: app, prefix: a.Cfg.APIPrefix, token: tok.AccessToken}
-	rng := rand.New(rand.NewSource(42))
+	c := &client{ctx: ctx, app: app, prefix: a.Cfg.APIPrefix, token: tok.AccessToken}
+	rng := rand.New(rand.NewSource(42)) //nolint:gosec // deterministic sample data, not security-sensitive
 	now := time.Now().In(a.Loc)
 
 	// ---------- settings ----------
@@ -185,7 +187,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	}
 	var suppliers []string
 	for i, n := range []string{"PT Kimia Farma Trading", "CV Medika Sumatera", "PT Enseval Putera"} {
-		suppliers = append(suppliers, id(c.do("POST", "/suppliers", map[string]any{"name": n, "contact_person": "Sales " + fmt.Sprint(i+1), "phone": fmt.Sprintf("+6261400%04d", i+1), "code": fmt.Sprintf("S%02d", i+1), "address": "Medan"})))
+		suppliers = append(suppliers, id(c.do("POST", "/suppliers", map[string]any{"name": n, "contact_person": "Sales " + strconv.Itoa(i+1), "phone": fmt.Sprintf("+6261400%04d", i+1), "code": fmt.Sprintf("S%02d", i+1), "address": "Medan"})))
 	}
 	cashier := id(c.do("POST", "/staff", map[string]any{"name": "Vina Pazary", "email": "kasir@lestari.id", "password": b64("kasir12345"), "role": "cashier", "phone": "+6281299990001"}))
 	c.do("POST", "/staff", map[string]any{"name": "Roy Situmorang", "email": "manajer@lestari.id", "password": b64("manajer12345"), "role": "manager"})
@@ -217,13 +219,13 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 			shift = id(c.do("POST", "/shifts", map[string]any{"cash_drawer_id": drawer, "opening_cash": 200000}))
 		}
 		n := 2 + rng.Intn(5)
-		for k := 0; k < n; k++ {
+		for range n {
 			at := time.Date(date.Year(), date.Month(), date.Day(), 8+rng.Intn(13), rng.Intn(60), rng.Intn(60), 0, a.Loc)
 			if at.After(now) {
 				at = now.Add(-time.Duration(rng.Intn(3600)) * time.Second)
 			}
 			var items []any
-			for j := 0; j < 1+rng.Intn(3); j++ {
+			for range 1 + rng.Intn(3) {
 				pid := productIDs[rng.Intn(len(productIDs))]
 				q := float64(1 + rng.Intn(3))
 				if left[pid] < q {
@@ -265,7 +267,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	}
 
 	// a point redemption (the customer has points from earlier purchases)
-	c.do("POST", "/customers/"+fmt.Sprint(customers[0])+"/points", map[string]any{"mode": "add", "points": 200, "note": "Welcome bonus"})
+	c.do("POST", "/customers/"+customers[0]+"/points", map[string]any{"mode": "add", "points": 200, "note": "Welcome bonus"})
 	c.do("POST", "/sales", map[string]any{"customer_id": customers[0], "payment_method": "cash",
 		"items": []any{map[string]any{"product_id": productIDs[11], "quantity": 2, "points_redeemed": 50}}})
 	// a purchase return

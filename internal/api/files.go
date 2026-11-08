@@ -50,7 +50,7 @@ func (a *API) saveUpload(c fiber.Ctx, field, purpose string) (map[string]any, er
 	p := httpx.P(c)
 	rel := filepath.Join(p.StoreID, auth.RandomToken(16)+ext)
 	dst := filepath.Join(a.Cfg.UploadDir, rel)
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return nil, err
 	}
 	if err := c.SaveFile(fh, dst); err != nil {

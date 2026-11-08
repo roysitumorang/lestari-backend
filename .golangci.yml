@@ -1,0 +1,64 @@
+version: "2"
+
+# golangci-lint v2 configuration (tested with v2.15.0) — run `make lint`.
+run:
+  go: "1.27"
+  tests: true
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - intrange
+    - misspell
+    - modernize
+    - nilerr
+    - noctx
+    - nolintlint
+    - perfsprint
+    - predeclared
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+  settings:
+    staticcheck:
+      checks: ["all"]
+    revive:
+      rules:
+        # Everything under internal/ is private to this module; doc comments are written where they help,
+        # not on every exported identifier.
+        - name: exported
+          disabled: true
+        # Handlers and crud hooks have fixed signatures; unused parameters there are expected.
+        - name: unused-parameter
+          disabled: true
+    gosec:
+      excludes:
+        # Table and column names in dynamic SQL come from code-defined resources, never from requests;
+        # all request values are bound as $n parameters.
+        - G201
+        - G202
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Test-only helpers: the demo PNG and multipart writes cannot fail on an in-memory buffer.
+      - path: _test\.go
+        linters: [errcheck, gosec]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+formatters:
+  enable:
+    - gofmt

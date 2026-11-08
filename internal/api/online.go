@@ -8,7 +8,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	. "github.com/roysitumorang/lestari-backend/internal/crud"
+	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
@@ -31,10 +31,10 @@ func stockHeld(status string) bool {
 	return status == "processing" || status == "shipped" || status == "delivered" || status == "completed"
 }
 
-func (a *API) orderResource() *Resource {
-	return &Resource{
+func (a *API) orderResource() *crud.Resource {
+	return &crud.Resource{
 		Name: "Online orders", Singular: "Order", Table: "catalog_orders", DefaultSort: "t.created_at DESC, t.id DESC",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "order_number", ReadOnly: true, Search: true},
 			{Name: "customer_name", Required: true, Search: true},
 			{Name: "customer_phone"},
@@ -44,16 +44,16 @@ func (a *API) orderResource() *Resource {
 			{Name: "tracking_number", ReadOnly: true},
 			{Name: "payment_method", Enum: en("bank_transfer", "direct"), Default: "bank_transfer", Filter: true},
 			{Name: "payment_proof_url"},
-			{Name: "subtotal", Kind: Num, ReadOnly: true},
-			{Name: "shipping_fee", Kind: Num, Min: F(0), Default: 0.0},
-			{Name: "grand_total", Kind: Num, ReadOnly: true},
+			{Name: "subtotal", Kind: crud.Num, ReadOnly: true},
+			{Name: "shipping_fee", Kind: crud.Num, Min: new(float64(0)), Default: 0.0},
+			{Name: "grand_total", Kind: crud.Num, ReadOnly: true},
 			{Name: "customer_note"},
 			{Name: "status", ReadOnly: true, Filter: true},
 			{Name: "status_reason", ReadOnly: true},
-			{Name: "items", Kind: JSON, Virtual: true, Required: true},
+			{Name: "items", Kind: crud.JSON, Virtual: true, Required: true},
 		},
-		Filters: []Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		Filters: []crud.Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id != "" {
 				return httpx.Conflict("Change an order with its status actions.")
 			}
@@ -65,7 +65,7 @@ func (a *API) orderResource() *Resource {
 			}
 			return err
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
+		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
 			var sub float64
 			n := 0
 			for i, it := range httpx.Items(h.Body, "items") {
@@ -118,17 +118,17 @@ func (a *API) registerOnlineCatalog() {
 	a.addH("PATCH", "/catalog/orders/:id/status", a.orderStatus)
 	a.addH("GET", "/catalog/orders/:id/invoice", a.orderInvoice)
 
-	a.CRUD.Register(a.addH, "/catalog/payment-accounts", &Resource{
+	a.CRUD.Register(a.addH, "/catalog/payment-accounts", &crud.Resource{
 		Name: "Payout accounts", Singular: "Account", Table: "catalog_payment_accounts", DefaultSort: "t.type, t.provider",
-		Fields: []Field{
+		Fields: []crud.Field{
 			{Name: "type", Required: true, Enum: en("bank", "e_wallet", "qris"), Default: "bank", Filter: true},
 			{Name: "provider", Required: true, Search: true},
 			{Name: "account_name", Required: true, Search: true},
 			{Name: "account_number"},
 			{Name: "qris_image_url"},
-			{Name: "is_active", Kind: Bool, Default: true},
+			{Name: "is_active", Kind: crud.Bool, Default: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			typ, _ := vals["type"].(string)
 			if typ == "qris" && vals["qris_image_url"] == nil && id == "" {
 				return httpx.Invalid("qris_image_url", "Upload the QRIS image.")

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -130,9 +131,7 @@ func (a *API) reportExport(rp report) fiber.Handler {
 		rows := res.rows
 		if res.totals != nil {
 			t := map[string]any{}
-			for k, v := range res.totals {
-				t[k] = v
-			}
+			maps.Copy(t, res.totals)
 			t[rp.cols[0].Key] = "Total"
 			rows = append(rows, t)
 		}
@@ -296,9 +295,7 @@ func (a *API) profitLoss(r *rq) (*rres, error) {
 	keys := []string{"gross_sales", "discounts", "cost_of_goods_sold", "gross_profit", "other_income", "mdr_fees", "commissions", "other_expenses", "net_profit"}
 	totals := sums(rows, keys...)
 	summary := map[string]any{}
-	for k, v := range totals {
-		summary[k] = v
-	}
+	maps.Copy(summary, totals)
 	var purchases float64
 	_ = a.DB.QueryRow(r.c.Context(), `SELECT COALESCE(sum(grand_total),0) FROM purchases WHERE branch_id=$1 AND purchase_date BETWEEN $2::date AND $3::date`, r.p.BranchID, r.start, r.end).Scan(&purchases)
 	summary["purchase_total"] = purchases
@@ -564,7 +561,7 @@ func (a *API) shiftPDF(c fiber.Ctx) error {
 	y := 396.0
 	line := func(label string, v any, bold bool) {
 		d.Text(10, y, 8, bold, label)
-		val := ""
+		var val string
 		switch x := v.(type) {
 		case float64:
 			val = export.Thousands(x)
