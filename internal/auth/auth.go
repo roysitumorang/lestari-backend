@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,7 +31,7 @@ type Service struct {
 }
 
 type Claims struct {
-	StoreID int64 `json:"sid"`
+	StoreID string `json:"sid"`
 	jwt.RegisteredClaims
 }
 
@@ -56,10 +55,10 @@ type Tokens struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
-func (s *Service) Issue(ctx context.Context, userID, storeID int64, remember bool) (Tokens, error) {
+func (s *Service) Issue(ctx context.Context, userID, storeID string, remember bool) (Tokens, error) {
 	now := time.Now()
 	claims := Claims{StoreID: storeID, RegisteredClaims: jwt.RegisteredClaims{
-		Subject:   strconv.FormatInt(userID, 10),
+		Subject:   userID,
 		IssuedAt:  jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(s.AccessTTL)),
 		Issuer:    "lestari",
@@ -82,7 +81,7 @@ func (s *Service) Issue(ctx context.Context, userID, storeID int64, remember boo
 
 // Refresh rotates a refresh token.
 func (s *Service) Refresh(ctx context.Context, token string) (Tokens, error) {
-	var id, userID, storeID int64
+	var id, userID, storeID string
 	var expires time.Time
 	err := s.DB.QueryRow(ctx, `
 		UPDATE refresh_tokens r SET revoked_at = now()
@@ -96,7 +95,7 @@ func (s *Service) Refresh(ctx context.Context, token string) (Tokens, error) {
 	return s.Issue(ctx, userID, storeID, time.Until(expires) > 25*time.Hour)
 }
 
-func (s *Service) RevokeAll(ctx context.Context, userID int64) error {
+func (s *Service) RevokeAll(ctx context.Context, userID string) error {
 	_, err := s.DB.Exec(ctx, `UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, userID)
 	return err
 }
@@ -126,15 +125,17 @@ func (s *Service) Middleware() fiber.Handler {
 		if err != nil {
 			return httpx.Unauthorized("", "Session expired, please sign in again.")
 		}
-		uid, _ := strconv.ParseInt(claims.Subject, 10, 64)
-		p := &httpx.Principal{UserID: uid, StoreID: claims.StoreID}
-		var userBranch *int64
+		p := &httpx.Principal{UserID: claims.Subject, StoreID: claims.StoreID}
+		if !httpx.IsUUID(p.UserID) || !httpx.IsUUID(p.StoreID) {
+			return httpx.Unauthorized("", "Session expired, please sign in again.")
+		}
+		var userBranch *string
 		err = s.DB.QueryRow(c.Context(), `
 			SELECT u.role, u.name, u.email, u.permissions, u.branch_id,
 			       (SELECT id FROM branches WHERE store_id = u.store_id AND is_head_office AND deleted_at IS NULL ORDER BY id LIMIT 1),
 			       COALESCE((SELECT array_agg(code) FROM store_plugins sp WHERE sp.store_id = u.store_id AND sp.status IN ('active','trial') AND (sp.expires_at IS NULL OR sp.expires_at > now())), '{}')
 			FROM users u WHERE u.id = $1 AND u.store_id = $2 AND u.deleted_at IS NULL AND u.status <> 'disabled'`,
-			uid, claims.StoreID).Scan(&p.Role, &p.Name, &p.Email, &p.Permissions, &userBranch, &p.HeadOffice, &p.Plugins)
+			p.UserID, p.StoreID).Scan(&p.Role, &p.Name, &p.Email, &p.Permissions, &userBranch, &p.HeadOffice, &p.Plugins)
 		if err != nil {
 			return httpx.Unauthorized("", "Session expired, please sign in again.")
 		}
@@ -142,10 +143,10 @@ func (s *Service) Middleware() fiber.Handler {
 		if userBranch != nil {
 			p.BranchID = *userBranch
 		}
-		if hb := c.Get("X-Branch-Id"); hb != "" {
-			bid, err := strconv.ParseInt(hb, 10, 64)
-			if err != nil {
-				return httpx.BadRequest("X-Branch-Id must be a number.")
+		if hb := strings.ToLower(strings.TrimSpace(c.Get("X-Branch-Id"))); hb != "" {
+			bid := hb
+			if !httpx.IsUUID(bid) {
+				return httpx.BadRequest("X-Branch-Id must be a UUID.")
 			}
 			if bid != p.BranchID {
 				if p.Role != "owner" && p.Role != "administrator" {

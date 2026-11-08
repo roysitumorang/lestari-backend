@@ -49,12 +49,12 @@ func (a *API) staffResource() *Resource {
 			{Name: "phone", Search: true},
 			{Name: "role", Required: true, Enum: en("administrator", "manager", "cashier"), Default: "cashier", Filter: true},
 			{Name: "ppob_pin", Kind: Password, Col: "ppob_pin_hash"},
-			{Name: "branch_id", Kind: Int, Filter: true, Ref: &Ref{Key: "branch", Table: "branches", ScopeCol: "store_id"}},
+			{Name: "branch_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "branch", Table: "branches", ScopeCol: "store_id"}},
 			{Name: "address"},
 			{Name: "status", ReadOnly: true, Filter: true},
 			{Name: "last_login_at", Kind: Timestamp, ReadOnly: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
 			if err := requireManager(h); err != nil {
 				return err
 			}
@@ -70,7 +70,7 @@ func (a *API) staffResource() *Resource {
 					return httpx.Invalid("ppob_pin", "The PIN must be 6 digits.")
 				}
 			}
-			if id == 0 {
+			if id == "" {
 				vals["status"] = "invited"
 				if vals["branch_id"] == nil {
 					vals["branch_id"] = h.P.BranchID
@@ -81,7 +81,7 @@ func (a *API) staffResource() *Resource {
 			}
 			return nil
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id int64, created bool) error {
+		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
 			if created {
 				return nil
 			}
@@ -92,7 +92,7 @@ func (a *API) staffResource() *Resource {
 			}
 			return nil
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id int64) error {
+		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
 			if err := requireManager(h); err != nil {
 				return err
 			}
@@ -165,7 +165,7 @@ func (a *API) registerStaff() {
 		if tag.RowsAffected() == 0 {
 			return httpx.NotFound("Staff member")
 		}
-		a.activity(c, "permissions_changed", fmt.Sprintf("Changed access rights of staff #%d", id))
+		a.activity(c, "permissions_changed", fmt.Sprintf("Changed access rights of staff %s", id))
 		return httpx.OK(c, fiber.Map{"permissions": in.Permissions})
 	})
 	a.addH("POST", "/staff/:id/resend-invitation", func(c fiber.Ctx) error {
@@ -219,8 +219,8 @@ func (a *API) attendanceWhere(c fiber.Ctx) (string, []any, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	staff, _ := strconv.ParseInt(c.Query("staff_id"), 10, 64)
-	return `a.branch_id=$1 AND a.date BETWEEN $2::date AND $3::date AND ($4 = 0 OR a.staff_id = $4)`, []any{httpx.P(c).BranchID, start, end, staff}, nil
+	staff := httpx.QueryUUID(c, "staff_id")
+	return `a.branch_id=$1 AND a.date BETWEEN $2::date AND $3::date AND ($4::uuid IS NULL OR a.staff_id = $4::uuid)`, []any{httpx.P(c).BranchID, start, end, staff}, nil
 }
 
 func (a *API) listAttendance(c fiber.Ctx) error {
@@ -320,15 +320,15 @@ func (a *API) registerHelpAccess() {
 		Scope: storeScope, InsertScope: storeInsert,
 		Fields: []Field{
 			{Name: "platform", Required: true, Enum: en("web", "app"), Default: "web"},
-			{Name: "account_id", Kind: Int, Required: true, Ref: &Ref{Key: "account", Table: "users", Label: "email", ScopeCol: "store_id"}},
+			{Name: "account_id", Kind: UUID, Required: true, Ref: &Ref{Key: "account", Table: "users", Label: "email", ScopeCol: "store_id"}},
 			{Name: "account_email", Expr: "(SELECT email FROM users WHERE id = t.account_id)"},
 			{Name: "duration_hours", Kind: Int, Required: true, Enum: en("1", "6", "24", "72")},
 			{Name: "description", Required: true},
 			{Name: "status", Expr: "(CASE WHEN t.status = 'active' AND t.expires_at < now() THEN 'expired' ELSE t.status END)", Filter: true},
 			{Name: "expires_at", Kind: Timestamp, ReadOnly: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
-			if id > 0 {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+			if id != "" {
 				return httpx.Conflict("Support access cannot be edited; revoke it and create a new one.")
 			}
 			if !h.P.IsOwner() && h.P.Role != "administrator" {

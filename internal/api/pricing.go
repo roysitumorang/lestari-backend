@@ -71,8 +71,8 @@ func (a *API) registerPricing() {
 }
 
 // percentAtMost100 rejects percentages above 100 for a type/value field pair.
-func percentAtMost100(typeCol, valueCol string) func(context.Context, *Ctx, map[string]any, int64) error {
-	return func(_ context.Context, _ *Ctx, vals map[string]any, _ int64) error {
+func percentAtMost100(typeCol, valueCol string) func(context.Context, *Ctx, map[string]any, string) error {
+	return func(_ context.Context, _ *Ctx, vals map[string]any, _ string) error {
 		if vals[typeCol] == "percent" {
 			if v, ok := vals[valueCol].(float64); ok && v > 100 {
 				return httpx.Invalid(valueCol, "A percentage cannot be more than 100.")
@@ -95,7 +95,7 @@ func (a *API) registerMarketing() {
 			{Name: "start_time", Kind: Time},
 			{Name: "end_time", Kind: Time},
 			{Name: "days", Kind: StrArray, Enum: en("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"), Default: []string{}},
-			{Name: "customer_type_ids", Kind: IntArray, Default: []int64{}},
+			{Name: "customer_type_ids", Kind: UUIDArray, Default: []string{}},
 			{Name: "discount_type", Enum: en("percent", "amount")},
 			{Name: "discount_value", Kind: Num, Min: F(0)},
 			{Name: "minimum_purchase", Kind: Num, Min: F(0)},
@@ -106,12 +106,12 @@ func (a *API) registerMarketing() {
 			{Name: "description"},
 		},
 		Filters: []Filter{promoStatus},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
 			if err := percentAtMost100("discount_type", "discount_value")(ctx, h, vals, id); err != nil {
 				return err
 			}
 			s, e := vals["start_date"], vals["end_date"]
-			if id > 0 && (s == nil || e == nil) {
+			if id != "" && (s == nil || e == nil) {
 				var cs, ce string
 				if err := h.Tx.QueryRow(ctx, `SELECT start_date::text, end_date::text FROM promotions WHERE id=$1`, id).Scan(&cs, &ce); err != nil {
 					return err
@@ -128,7 +128,7 @@ func (a *API) registerMarketing() {
 					return httpx.Invalid("end_date", "Must be on or after the start date.")
 				}
 			}
-			if vals["type"] == "buy_x_get_y" && (vals["buy_quantity"] == nil || vals["get_quantity"] == nil) && id == 0 {
+			if vals["type"] == "buy_x_get_y" && (vals["buy_quantity"] == nil || vals["get_quantity"] == nil) && id == "" {
 				v := &httpx.Validation{}
 				if vals["buy_quantity"] == nil {
 					v.Add("buy_quantity", "Required for Buy X get Y.")
@@ -151,8 +151,8 @@ func (a *API) registerMarketing() {
 			{Name: "basis", Required: true, Enum: en("product", "transaction"), Default: "product"},
 			{Name: "type", Required: true, Enum: en("percent", "amount"), Default: "percent"},
 			{Name: "value", Kind: Num, Required: true, Min: F(0)},
-			{Name: "staff_ids", Kind: IntArray, Default: []int64{}},
-			{Name: "product_ids", Kind: IntArray, Default: []int64{}},
+			{Name: "staff_ids", Kind: UUIDArray, Default: []string{}},
+			{Name: "product_ids", Kind: UUIDArray, Default: []string{}},
 			{Name: "is_active", Kind: Bool, Default: true},
 		},
 		BeforeWrite: percentAtMost100("type", "value"),

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -170,13 +171,35 @@ func Decode(c fiber.Ctx, v any) error {
 	return nil
 }
 
-// ParamID reads a positive integer path parameter.
-func ParamID(c fiber.Ctx, name string) (int64, error) {
-	n, err := strconv.ParseInt(c.Params(name), 10, 64)
-	if err != nil || n <= 0 {
-		return 0, NotFound("Resource")
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// IsUUID reports whether s is a canonical UUID string.
+func IsUUID(s string) bool { return uuidRe.MatchString(s) }
+
+// ParamID reads a UUID path parameter (lower-cased); anything else is a 404.
+func ParamID(c fiber.Ctx, name string) (string, error) {
+	v := strings.ToLower(c.Params(name))
+	if !IsUUID(v) {
+		return "", NotFound("Resource")
 	}
-	return n, nil
+	return v, nil
+}
+
+// UUID reads a UUID attribute from a decoded body.
+func UUID(m map[string]any, k string) (string, bool) {
+	s, ok := m[k].(string)
+	s = strings.ToLower(strings.TrimSpace(s))
+	return s, ok && IsUUID(s)
+}
+
+// QueryUUID returns a UUID query parameter, or nil when it is missing or malformed
+// (so SQL can use "$n::uuid IS NULL OR col = $n").
+func QueryUUID(c fiber.Ctx, k string) any {
+	v := strings.ToLower(strings.TrimSpace(c.Query(k)))
+	if IsUUID(v) {
+		return v
+	}
+	return nil
 }
 
 // QueryArray returns ?k[]=a&k[]=b (or ?k=a,b) values.

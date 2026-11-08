@@ -1,6 +1,6 @@
 module github.com/roysitumorang/lestari-backend
 
-go 1.26.0
+go 1.27
 
 require (
 	github.com/goccy/go-json v0.12.0

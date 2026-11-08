@@ -55,7 +55,7 @@ var ppobCatalog = []ppobItem{
 	postpaid("internet_tv", "BIZNET", "Biznet Home", 2500),
 }
 
-func ppobBalance(ctx context.Context, q db.Querier, branchID int64) (float64, error) {
+func ppobBalance(ctx context.Context, q db.Querier, branchID string) (float64, error) {
 	var bal float64
 	err := q.QueryRow(ctx, `SELECT COALESCE((SELECT sum(amount) FROM ppob_deposits WHERE branch_id=$1 AND status='success'), 0)
 		- COALESCE((SELECT sum(base_price) FROM ppob_transactions WHERE branch_id=$1 AND status IN ('success','pending')), 0)`, branchID).Scan(&bal)
@@ -86,8 +86,8 @@ func (a *API) registerPPOB() {
 		res := &Resource{
 			Name: "PPOB " + kind + " prices", Singular: "Price", Table: "ppob_prices", Where: "t.kind = '" + kind + "'", DefaultSort: "t.category, t.product_name",
 			ImportKey: "product_code", Fields: fields,
-			BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
-				if id == 0 {
+			BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+				if id == "" {
 					return httpx.Forbidden("New PPOB products come from the provider catalog.")
 				}
 				if k == "prepaid" {
@@ -189,7 +189,7 @@ func (a *API) createDeposit(c fiber.Ctx) error {
 	return httpx.OK(c, row)
 }
 
-func (a *API) deposit(c fiber.Ctx, id int64) (map[string]any, error) {
+func (a *API) deposit(c fiber.Ctx, id string) (map[string]any, error) {
 	row, err := db.JSONRow(c.Context(), a.DB, `SELECT `+depositCols+` FROM ppob_deposits WHERE id=$1 AND branch_id=$2`, id, httpx.P(c).BranchID)
 	if err == nil && row == nil {
 		err = httpx.NotFound("Deposit")
@@ -245,7 +245,7 @@ func (a *API) cancelDeposit(c fiber.Ctx) error {
 // sellPPOB records a PPOB sale made by the cashier and charges the branch balance.
 func (a *API) sellPPOB(c fiber.Ctx) error {
 	var in struct {
-		PriceID        int64   `json:"price_id"`
+		PriceID        string  `json:"price_id"`
 		CustomerNumber string  `json:"customer_number"`
 		BillAmount     float64 `json:"bill_amount"` // postpaid bill from the biller
 	}

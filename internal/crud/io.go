@@ -139,7 +139,7 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 		ctx := context.Background()
 		for i, row := range rows {
 			rowNo := i + 2 // header is row 1
-			var id int64
+			var id string
 			if mode == "update" && r.ImportKey != "" {
 				key := httpx.Str(row, r.ImportKey)
 				if key == "" {
@@ -161,7 +161,7 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 				res.Errors = append(res.Errors, ImportError{rowNo, describe(err)})
 				continue
 			}
-			if id > 0 {
+			if id != "" {
 				res.Updated++
 			} else {
 				res.Created++

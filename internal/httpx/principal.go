@@ -6,10 +6,10 @@ import (
 
 // Principal is the authenticated user plus the store/branch the request acts on.
 type Principal struct {
-	UserID      int64
-	StoreID     int64
-	BranchID    int64 // active branch (X-Branch-Id or the user's default)
-	HeadOffice  int64 // head-office branch of the store
+	UserID      string
+	StoreID     string
+	BranchID    string // active branch (X-Branch-Id or the user's default)
+	HeadOffice  string // head-office branch of the store
 	Role        string
 	Name        string
 	Email       string

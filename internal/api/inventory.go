@@ -10,7 +10,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/roysitumorang/lestari-backend/internal/auth"
 	. "github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
@@ -18,10 +17,10 @@ import (
 )
 
 // startJob records a background job and runs fn in a goroutine. It returns the job id.
-func (a *API) startJob(storeID int64, kind string, payload any, fn func(ctx context.Context) (any, error)) (string, error) {
-	id := auth.RandomToken(12)
+func (a *API) startJob(storeID string, kind string, payload any, fn func(ctx context.Context) (any, error)) (string, error) {
+	var id string
 	pb, _ := json.Marshal(payload)
-	if _, err := a.DB.Exec(context.Background(), `INSERT INTO jobs (id, store_id, kind, status, payload) VALUES ($1,$2,$3,'queued',$4::jsonb)`, id, storeID, kind, string(pb)); err != nil {
+	if err := a.DB.QueryRow(context.Background(), `INSERT INTO jobs (store_id, kind, status, payload) VALUES ($1,$2,'queued',$3::jsonb) RETURNING id`, storeID, kind, string(pb)).Scan(&id); err != nil {
 		return "", err
 	}
 	go func() {
@@ -48,7 +47,7 @@ func (a *API) stockResource() *Resource {
 			{Name: "image_url", ReadOnly: true},
 			{Name: "name", ReadOnly: true, Search: true},
 			{Name: "sku", ReadOnly: true, Search: true},
-			{Name: "category_id", Kind: Int, ReadOnly: true, Filter: true},
+			{Name: "category_id", Kind: UUID, ReadOnly: true, Filter: true},
 			{Name: "category_name", Expr: "(SELECT name FROM categories WHERE id = t.category_id)"},
 			{Name: "stock", Kind: Num, ReadOnly: true},
 			{Name: "unit", ReadOnly: true},
@@ -184,7 +183,7 @@ func (a *API) importStock(c fiber.Ctx) error {
 				res.Errors = append(res.Errors, ImportError{Row: i + 2, Message: "sku and stock are required"})
 				continue
 			}
-			var id int64
+			var id string
 			var cur float64
 			if err := tx.QueryRow(c.Context(), `SELECT id, stock FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND deleted_at IS NULL`, p.BranchID, sku).Scan(&id, &cur); err != nil {
 				res.Failed++
@@ -248,18 +247,18 @@ func (a *API) opnameResource() *Resource {
 			{Name: "difference_value", Kind: Num, Expr: "(SELECT COALESCE(sum((i.physical_stock - i.system_stock) * i.unit_cost), 0) FROM stock_opname_items i WHERE i.opname_id = t.id)"},
 			{Name: "items", Kind: JSON, Virtual: true, Required: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
-			if id > 0 {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+			if id != "" {
 				return httpx.Conflict("A stock opname cannot be edited; delete it and create a new one.")
 			}
 			code, err := a.nextNumber(ctx, h.Tx, "SO", "stock_opnames", "code", "branch_id", h.P.BranchID)
 			vals["code"] = code
 			return err
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id int64, created bool) error {
+		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
 			return a.saveOpnameItems(ctx, h.Tx, h.P.BranchID, id, httpx.Items(h.Body, "items"))
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id int64) error {
+		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
 			var status string
 			if err := h.Tx.QueryRow(ctx, `SELECT status FROM stock_opnames WHERE id=$1`, id).Scan(&status); err != nil {
 				return err
@@ -278,11 +277,11 @@ func (a *API) opnameResource() *Resource {
 	}
 }
 
-func (a *API) saveOpnameItems(ctx context.Context, tx pgx.Tx, branchID, opnameID int64, items []map[string]any) error {
+func (a *API) saveOpnameItems(ctx context.Context, tx pgx.Tx, branchID, opnameID string, items []map[string]any) error {
 	v := &httpx.Validation{}
 	n := 0
 	for i, it := range items {
-		pid, ok := httpx.Int(it, "product_id")
+		pid, ok := httpx.UUID(it, "product_id")
 		qty, qok := httpx.Num(it, "physical_stock")
 		if !ok && !qok {
 			continue // empty row
@@ -331,7 +330,7 @@ func (a *API) registerOpnames() {
 				return err
 			}
 			type line struct {
-				pid           int64
+				pid           string
 				physical, cur float64
 			}
 			var lines []line
@@ -417,19 +416,19 @@ func (a *API) registerOpnames() {
 		items := []any{}
 		result := ImportResult{Errors: []ImportError{}}
 		for i, r := range rows {
-			var pid int64
+			var pid string
 			if err := a.DB.QueryRow(c.Context(), `SELECT id FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND deleted_at IS NULL`, p.BranchID, httpx.Str(r, "sku")).Scan(&pid); err != nil {
 				result.Failed++
 				result.Errors = append(result.Errors, ImportError{Row: i + 2, Message: "No product with SKU " + httpx.Str(r, "sku")})
 				continue
 			}
 			qty, _ := httpx.Num(r, "physical_stock")
-			items = append(items, map[string]any{"product_id": float64(pid), "physical_stock": qty, "note": httpx.Str(r, "note")})
+			items = append(items, map[string]any{"product_id": pid, "physical_stock": qty, "note": httpx.Str(r, "note")})
 		}
 		if len(items) > 0 {
 			by := c.FormValue("performed_by_name", p.Name)
 			body := map[string]any{"opname_date": a.today(), "performed_by_name": by, "performed_by_role": p.Role, "note": "Imported from " + c.FormValue("filename", "spreadsheet"), "items": items}
-			if _, err := a.CRUD.Save(c, a.opnameResource(), body, 0); err != nil {
+			if _, err := a.CRUD.Save(c, a.opnameResource(), body, ""); err != nil {
 				return err
 			}
 			result.Created = 1

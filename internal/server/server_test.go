@@ -30,7 +30,7 @@ import (
 var paramRe = regexp.MustCompile(`\{[a-z_]+\}|:[a-z_]+`)
 
 // endpoints that answer with a file instead of JSON
-var fileRe = regexp.MustCompile(`(/(export|pdf|qr-code|qr-codes|barcodes|labels|import-template|print|invoice|menu-book|delivery-note)|^/sales/[0-9]+/receipt)$`)
+var fileRe = regexp.MustCompile(`(/(export|pdf|qr-code|qr-codes|barcodes|labels|import-template|print|invoice|menu-book|delivery-note)|^/sales/[0-9a-f-]+/receipt)$`)
 
 func normalize(route string) string { return paramRe.ReplaceAllString(route, "{}") }
 
@@ -70,7 +70,7 @@ type harness struct {
 	app    *fiber.App
 	a      *api.API
 	token  string
-	branch int64
+	branch string
 }
 
 func (h *harness) call(method, path string, body any, ctype ...string) (int, []byte, http.Header) {
@@ -87,8 +87,8 @@ func (h *harness) call(method, path string, body any, ctype ...string) (int, []b
 	req := httptest.NewRequest(method, "/api/v1"+path, r)
 	req.Header.Set("Content-Type", ct)
 	req.Header.Set("Authorization", "Bearer "+h.token)
-	if h.branch > 0 {
-		req.Header.Set("X-Branch-Id", fmt.Sprint(h.branch))
+	if h.branch != "" {
+		req.Header.Set("X-Branch-Id", h.branch)
 	}
 	res, err := h.app.Test(req, fiber.TestConfig{Timeout: 60 * time.Second})
 	if err != nil {
@@ -148,7 +148,7 @@ func setup(t *testing.T) *harness {
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	var uid int64
+	var uid string
 	if err := pool.QueryRow(ctx, `SELECT id FROM users WHERE email=$1`, info.Email).Scan(&uid); err != nil {
 		t.Fatal(err)
 	}
@@ -332,21 +332,21 @@ func TestIntegrationWorkflows(t *testing.T) {
 
 	// transfer with confirmation: accept as the receiving branch
 	br := h.json("GET", "/branches", nil, 200)
-	var target float64
+	var target string
 	for _, x := range br["data"].([]any) {
 		if m := x.(map[string]any); m["is_head_office"] == false {
-			target = m["id"].(float64)
+			target = m["id"].(string)
 		}
 	}
 	tr := h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": target, "transfer_date": today, "requires_confirmation": true,
 		"items": []any{map[string]any{"product_id": pid, "quantity": 5}}}, 201)
-	h.branch = int64(target)
+	h.branch = target
 	h.json("POST", fmt.Sprintf("/stock-transfers/%v/accept", tr["data"].(map[string]any)["id"]), map[string]any{}, 200)
 	recv := h.json("GET", "/inventory/stocks?q=Test%20tea", nil, 200)
 	if r := first(recv); r == nil || r["stock"].(float64) != 5 {
 		t.Errorf("receiving branch stock: %v", r)
 	}
-	h.branch = 0
+	h.branch = ""
 
 	// billing: voucher, coin purchase of storage, plugin trial
 	h.json("POST", "/billing/vouchers/redeem", map[string]any{"code": "WELCOME50K"}, 200)
@@ -377,6 +377,15 @@ func TestIntegrationWorkflows(t *testing.T) {
 		t.Errorf("upload: %d %s", code, b)
 	}
 
+	// ids are PostgreSQL-generated UUID v7 values
+	if s, _ := pid.(string); !uuidV7.MatchString(s) {
+		t.Errorf("product id is not a UUID v7: %v", pid)
+	}
+	h.json("GET", "/products/123", nil, 404)
+	h.json("GET", "/products/0190a1b2-0000-7000-8000-000000000000", nil, 404)
+	h.json("POST", "/sales", map[string]any{"items": []any{map[string]any{"product_id": 5, "quantity": 1}}}, 400)
+	h.json("POST", "/products", map[string]any{"name": "Bad ref", "selling_price": 1, "category_id": "nope"}, 422)
+
 	// validation and auth errors use the error envelope
 	bad := h.json("POST", "/products", map[string]any{"selling_price": "x"}, 422)
 	if e, ok := bad["error"].(map[string]any); !ok || e["fields"] == nil {
@@ -385,6 +394,8 @@ func TestIntegrationWorkflows(t *testing.T) {
 	h.token = "nope"
 	h.json("GET", "/products", nil, 401)
 }
+
+var uuidV7 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 func TestTOTP(t *testing.T) {
 	s := auth.NewTOTPSecret()

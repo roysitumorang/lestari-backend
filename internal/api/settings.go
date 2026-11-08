@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/goccy/go-json"
@@ -53,7 +52,7 @@ func (a *API) settingDefs() map[string]*settingDef {
 		{Key: "store",
 			Fields: []Field{{Name: "logo_url"}, {Name: "cover_url"}, {Name: "name", Required: true}, {Name: "owner_name"}, {Name: "phone"}, {Name: "motto"},
 				{Name: "business_type"}, {Name: "business_type_other"}, {Name: "address"}, {Name: "country_code", Enum: en("ID", "MY", "SG", "TL")},
-				{Name: "province_id", Kind: Int}, {Name: "city_id", Kind: Int}, {Name: "postal_code"},
+				{Name: "province_id", Kind: UUID}, {Name: "city_id", Kind: UUID}, {Name: "postal_code"},
 				{Name: "latitude", Kind: Num, Min: F(-90), Max: F(90)}, {Name: "longitude", Kind: Num, Min: F(-180), Max: F(180)},
 				{Name: "stock_valuation_method", Enum: en("default", "fifo", "lifo", "average")},
 				{Name: "currency", Enum: en("IDR", "MYR", "SGD", "USD", "AUD", "EUR")}, {Name: "timezone", Enum: en("Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura")},
@@ -74,7 +73,7 @@ func (a *API) settingDefs() map[string]*settingDef {
 		{Key: "online-store",
 			Fields: append(bools("is_enabled", "seo_enabled", "pwa_enabled", "use_physical_stock", "notify_owner"),
 				Field{Name: "subdomain"}, Field{Name: "store_email"}, Field{Name: "description"}, Field{Name: "facebook"}, Field{Name: "twitter"}, Field{Name: "instagram"},
-				Field{Name: "notify_staff_ids", Kind: IntArray}),
+				Field{Name: "notify_staff_ids", Kind: UUIDArray}),
 			Defaults: map[string]any{"is_enabled": false, "seo_enabled": true, "pwa_enabled": false, "use_physical_stock": true, "notify_owner": true, "notify_staff_ids": []any{}},
 			Validate: func(ctx context.Context, a *API, p *httpx.Principal, vals map[string]any) error {
 				return a.uniqueSlug(ctx, p, "online-store", "subdomain", vals)
@@ -89,7 +88,7 @@ func (a *API) settingDefs() map[string]*settingDef {
 		{Key: "qr-order",
 			Fields: append(bools("is_enabled", "qris_enabled", "cashier_payment_enabled", "addons_enabled", "table_ordering_enabled", "kiosk_enabled", "notify_owner"),
 				Field{Name: "order_expiry_hours", Kind: Int, Enum: en("3", "6", "12", "24")}, Field{Name: "payment_timing", Enum: en("pay_later", "pay_now")},
-				Field{Name: "menu_layout", Enum: en("tabs", "by_category")}, Field{Name: "category_ids", Kind: IntArray}, Field{Name: "notify_staff_ids", Kind: IntArray}),
+				Field{Name: "menu_layout", Enum: en("tabs", "by_category")}, Field{Name: "category_ids", Kind: UUIDArray}, Field{Name: "notify_staff_ids", Kind: UUIDArray}),
 			Defaults: map[string]any{"is_enabled": false, "order_expiry_hours": 3.0, "payment_timing": "pay_later", "qris_enabled": false, "cashier_payment_enabled": true,
 				"addons_enabled": false, "menu_layout": "tabs", "category_ids": []any{}, "table_ordering_enabled": false, "kiosk_enabled": false, "notify_owner": true, "notify_staff_ids": []any{}}},
 		{Key: "default-tax",
@@ -128,7 +127,7 @@ func (a *API) settingDefs() map[string]*settingDef {
 }
 
 // setting returns a branch setting merged over its defaults.
-func (a *API) setting(ctx context.Context, q db.Querier, branchID int64, key string) (map[string]any, error) {
+func (a *API) setting(ctx context.Context, q db.Querier, branchID string, key string) (map[string]any, error) {
 	out := map[string]any{}
 	if d, ok := a.defs[key]; ok {
 		for k, v := range d.Defaults {
@@ -200,7 +199,7 @@ func (a *API) putSetting(key string) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		vals, err := res.Values(body, 1) // partial update: only attributes present are written
+		vals, err := res.Values(body, "settings") // non-empty id = partial update: only attributes present are written
 		if err != nil {
 			return err
 		}
@@ -281,7 +280,7 @@ func (a *API) storeQRCode(c fiber.Ctx) error {
 	p := httpx.P(c)
 	lp, _ := a.setting(c.Context(), a.DB, p.BranchID, "link-page")
 	os, _ := a.setting(c.Context(), a.DB, p.BranchID, "online-store")
-	url := a.Cfg.PublicURL + "/s/" + strconv.FormatInt(p.BranchID, 10)
+	url := a.Cfg.PublicURL + "/s/" + p.BranchID
 	if u := strOr(lp["username"], ""); u != "" {
 		url = a.Cfg.PublicURL + "/l/" + u
 	} else if s := strOr(os["subdomain"], ""); s != "" {
@@ -311,15 +310,17 @@ func (a *API) linkPageVisitors(c fiber.Ctx) error {
 func (a *API) menuBook(c fiber.Ctx) error {
 	p := httpx.P(c)
 	qo, _ := a.setting(c.Context(), a.DB, p.BranchID, "qr-order")
-	ids := []int64{}
+	ids := []string{}
 	if arr, ok := qo["category_ids"].([]any); ok {
 		for _, x := range arr {
-			ids = append(ids, int64(num(x)))
+			if id, ok := x.(string); ok && httpx.IsUUID(id) {
+				ids = append(ids, id)
+			}
 		}
 	}
 	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT COALESCE(c.name, 'Other') AS category, p.name, p.selling_price, p.online_description
 		FROM products p LEFT JOIN categories c ON c.id = p.category_id
-		WHERE p.branch_id=$1 AND p.deleted_at IS NULL AND p.show_in_online_store AND (cardinality($2::bigint[]) = 0 OR p.category_id = ANY($2))
+		WHERE p.branch_id=$1 AND p.deleted_at IS NULL AND p.show_in_online_store AND (cardinality($2::uuid[]) = 0 OR p.category_id = ANY($2))
 		ORDER BY c.sort_order NULLS LAST, c.name NULLS LAST, p.name`, p.BranchID, ids)
 	if err != nil {
 		return err
@@ -422,7 +423,7 @@ func (a *API) buyStorage(c fiber.Ctx) error {
 }
 
 // spendCoins deducts premium coins or fails with 402.
-func spendCoins(ctx context.Context, tx pgx.Tx, storeID int64, amount float64) error {
+func spendCoins(ctx context.Context, tx pgx.Tx, storeID string, amount float64) error {
 	tag, err := tx.Exec(ctx, `UPDATE stores SET coin_balance = coin_balance - $2 WHERE id=$1 AND coin_balance >= $2`, storeID, amount)
 	if err != nil {
 		return err

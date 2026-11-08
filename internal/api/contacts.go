@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
@@ -29,7 +29,7 @@ func (a *API) registerContacts() {
 			{Name: "phone", Search: true},
 			{Name: "email", Search: true},
 			{Name: "code", Search: true},
-			{Name: "customer_type_id", Kind: Int, Filter: true, Ref: &Ref{Key: "customer_type", Table: "customer_types"}},
+			{Name: "customer_type_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "customer_type", Table: "customer_types"}},
 			{Name: "birth_date", Kind: Date},
 			{Name: "points", Kind: Int, ReadOnly: true},
 			{Name: "receivable_balance", Kind: Num, Expr: "(SELECT COALESCE(sum(d.total_amount - d.paid_amount), 0) FROM debts d WHERE d.customer_id = t.id AND d.kind = 'receivable' AND d.status <> 'paid')"},
@@ -74,7 +74,7 @@ func (a *API) registerContacts() {
 }
 
 // changePoints updates a customer's balance and ledger inside tx.
-func changePoints(ctx context.Context, tx pgx.Tx, branchID, customerID int64, delta int, typ, ref, note string) (int, error) {
+func changePoints(ctx context.Context, tx pgx.Tx, branchID, customerID string, delta int, typ, ref, note string) (int, error) {
 	var after int
 	err := tx.QueryRow(ctx, `UPDATE customers SET points = GREATEST(points + $3, 0), updated_at = now() WHERE id = $1 AND branch_id = $2 RETURNING points`,
 		customerID, branchID, delta).Scan(&after)
@@ -143,14 +143,14 @@ func (a *API) pointHistory(c fiber.Ctx) error {
 }
 
 func (a *API) customerQRCodes(c fiber.Ctx) error {
-	ids := []int64{}
+	ids := []string{}
 	for _, s := range httpx.QueryArray(c, "customer_ids") {
-		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-			ids = append(ids, n)
+		if s = strings.ToLower(strings.TrimSpace(s)); httpx.IsUUID(s) {
+			ids = append(ids, s)
 		}
 	}
-	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT id, name, COALESCE(NULLIF(code,''), 'C'||id) AS code, phone FROM customers
-		WHERE branch_id=$1 AND (cardinality($2::bigint[]) = 0 OR id = ANY($2)) ORDER BY name LIMIT 2000`, httpx.P(c).BranchID, ids)
+	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT id, name, COALESCE(NULLIF(code,''), 'C'||upper(right(replace(id::text,'-',''),8))) AS code, phone FROM customers
+		WHERE branch_id=$1 AND (cardinality($2::uuid[]) = 0 OR id = ANY($2)) ORDER BY name LIMIT 2000`, httpx.P(c).BranchID, ids)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (a *API) importPoints(c fiber.Ctx) error {
 				errs = append(errs, ImportError{Row: i + 2, Message: "code and points are required"})
 				continue
 			}
-			var id int64
+			var id string
 			var cur int
 			if err := tx.QueryRow(c.Context(), `SELECT id, points FROM customers WHERE branch_id=$1 AND code=$2`, p.BranchID, code).Scan(&id, &cur); err != nil {
 				failed++

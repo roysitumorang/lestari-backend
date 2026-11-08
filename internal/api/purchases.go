@@ -18,7 +18,7 @@ func (a *API) purchaseResource() *Resource {
 		Name: "Purchases", Singular: "Purchase", Table: "purchases", DefaultSort: "t.purchase_date DESC, t.id DESC",
 		Fields: []Field{
 			{Name: "receipt_number", ReadOnly: true, Search: true},
-			{Name: "supplier_id", Kind: Int, Filter: true, Ref: &Ref{Key: "supplier", Table: "suppliers"}},
+			{Name: "supplier_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "supplier", Table: "suppliers"}},
 			{Name: "supplier_name", Expr: "(SELECT name FROM suppliers WHERE id = t.supplier_id)", Search: true},
 			{Name: "purchase_date", Kind: Date, Required: true},
 			{Name: "invoice_number", Search: true},
@@ -37,8 +37,8 @@ func (a *API) purchaseResource() *Resource {
 			{Name: "items", Kind: JSON, Virtual: true, Required: true},
 		},
 		Filters: []Filter{dateFrom("t.purchase_date"), dateTo("t.purchase_date")},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
-			if id == 0 {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+			if id == "" {
 				num, err := a.nextNumber(ctx, h.Tx, "PO", "purchases", "receipt_number", "branch_id", h.P.BranchID)
 				if err != nil {
 					return err
@@ -47,7 +47,7 @@ func (a *API) purchaseResource() *Resource {
 			}
 			return nil
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id int64, created bool) error {
+		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
 			if !created {
 				if _, ok := h.Body["items"]; !ok {
 					return a.recalcPurchase(ctx, h.Tx, h.P, id)
@@ -61,7 +61,7 @@ func (a *API) purchaseResource() *Resource {
 			}
 			return a.recalcPurchase(ctx, h.Tx, h.P, id)
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id int64) error {
+		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
 			return a.reversePurchaseItems(ctx, h.Tx, h.P, id, "Purchase deleted")
 		},
 		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
@@ -72,7 +72,7 @@ func (a *API) purchaseResource() *Resource {
 	}
 }
 
-func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principal, purchaseID int64, items []map[string]any) error {
+func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principal, purchaseID string, items []map[string]any) error {
 	var ref string
 	if err := tx.QueryRow(ctx, `SELECT receipt_number FROM purchases WHERE id=$1`, purchaseID).Scan(&ref); err != nil {
 		return err
@@ -80,7 +80,7 @@ func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principa
 	v := &httpx.Validation{}
 	n := 0
 	for i, it := range items {
-		pid, ok := httpx.Int(it, "product_id")
+		pid, ok := httpx.UUID(it, "product_id")
 		qty, qok := httpx.Num(it, "quantity")
 		if !ok && !qok {
 			continue
@@ -120,7 +120,7 @@ func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principa
 	return v.Err()
 }
 
-func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principal, purchaseID int64, note string) error {
+func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principal, purchaseID string, note string) error {
 	var ref string
 	if err := tx.QueryRow(ctx, `SELECT receipt_number FROM purchases WHERE id=$1`, purchaseID).Scan(&ref); err != nil {
 		return err
@@ -130,7 +130,7 @@ func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Prin
 		return err
 	}
 	type it struct {
-		pid int64
+		pid string
 		qty float64
 	}
 	var items []it
@@ -156,9 +156,9 @@ func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Prin
 }
 
 // recalcPurchase refreshes totals, status and the payable for a purchase.
-func (a *API) recalcPurchase(ctx context.Context, tx pgx.Tx, p *httpx.Principal, id int64) error {
+func (a *API) recalcPurchase(ctx context.Context, tx pgx.Tx, p *httpx.Principal, id string) error {
 	var payType, ref string
-	var supplier *int64
+	var supplier *string
 	var paidIn *float64
 	var due *string
 	var disc, tax, fee float64
@@ -233,7 +233,7 @@ func (a *API) purchaseReturn(c fiber.Ctx) error {
 	if refund != "cash" && refund != "reduce_payable" {
 		return httpx.Invalid("refund_method", "Must be one of: cash, reduce_payable.")
 	}
-	var returnID int64
+	var returnID string
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		var ref string
@@ -251,7 +251,7 @@ func (a *API) purchaseReturn(c fiber.Ctx) error {
 		var total float64
 		n := 0
 		for i, it := range httpx.Items(body, "items") {
-			pid, ok := httpx.Int(it, "product_id")
+			pid, ok := httpx.UUID(it, "product_id")
 			qty, qok := httpx.Num(it, "quantity")
 			if !ok && !qok {
 				continue
@@ -312,7 +312,7 @@ func (a *API) registerFinance() {
 			{Name: "category", Required: true, Search: true},
 			{Name: "amount", Kind: Num, Required: true, Min: F(0)},
 			{Name: "payment_method", Enum: salesPaymentTypes},
-			{Name: "cash_drawer_id", Kind: Int, Ref: &Ref{Key: "cash_drawer", Table: "cash_drawers"}},
+			{Name: "cash_drawer_id", Kind: UUID, Ref: &Ref{Key: "cash_drawer", Table: "cash_drawers"}},
 			{Name: "description", Search: true},
 			{Name: "attachment_url"},
 		},
@@ -332,7 +332,7 @@ func (a *API) debtResource(kind string) *Resource {
 		Table: "debts", Where: "t.kind = '" + kind + "'", DefaultSort: "t.status DESC, t.due_date NULLS LAST, t.id DESC",
 		Fields: []Field{
 			{Name: "reference_number", ReadOnly: true, Search: true},
-			{Name: party + "_id", Kind: Int, ReadOnly: true, Filter: true, Ref: &Ref{Key: party, Table: table}},
+			{Name: party + "_id", Kind: UUID, ReadOnly: true, Filter: true, Ref: &Ref{Key: party, Table: table}},
 			{Name: party + "_name", Expr: "(SELECT name FROM " + table + " WHERE id = t." + party + "_id)", Search: true},
 			{Name: "transaction_date", Kind: Date, ReadOnly: true},
 			{Name: "due_date", Kind: Date, ReadOnly: true},
@@ -390,7 +390,7 @@ func (a *API) payDebt(res *Resource) fiber.Handler {
 		err = a.tx(c.Context(), func(tx pgx.Tx) error {
 			ctx := c.Context()
 			var total, paid float64
-			var saleID, purchaseID *int64
+			var saleID, purchaseID *string
 			kind := map[string]string{"Payables": "payable", "Receivables": "receivable"}[res.Name]
 			if err := tx.QueryRow(ctx, `SELECT total_amount, paid_amount, sale_id, purchase_id FROM debts WHERE id=$1 AND branch_id=$2 AND kind=$3 FOR UPDATE`, id, p.BranchID, kind).
 				Scan(&total, &paid, &saleID, &purchaseID); err != nil {
@@ -456,14 +456,14 @@ func (a *API) returnResource(kind string) *Resource {
 	if kind == "sale" {
 		r.Name, r.Singular = "Sales returns", "Sales return"
 		r.Fields = append(r.Fields,
-			Field{Name: "sale_id", Kind: Int, ReadOnly: true},
+			Field{Name: "sale_id", Kind: UUID, ReadOnly: true},
 			Field{Name: "receipt_number", Expr: "(SELECT receipt_number FROM sales WHERE id = t.sale_id)", Search: true},
 			Field{Name: "customer", Expr: "(SELECT json_build_object('id', c.id, 'name', c.name) FROM sales s JOIN customers c ON c.id = s.customer_id WHERE s.id = t.sale_id)"},
 		)
 	} else {
 		r.Name, r.Singular = "Purchase returns", "Purchase return"
 		r.Fields = append(r.Fields,
-			Field{Name: "purchase_id", Kind: Int, ReadOnly: true},
+			Field{Name: "purchase_id", Kind: UUID, ReadOnly: true},
 			Field{Name: "purchase_number", Expr: "(SELECT receipt_number FROM purchases WHERE id = t.purchase_id)", Search: true},
 			Field{Name: "supplier", Expr: "(SELECT json_build_object('id', s.id, 'name', s.name) FROM purchases pu JOIN suppliers s ON s.id = pu.supplier_id WHERE pu.id = t.purchase_id)"},
 		)
@@ -487,7 +487,7 @@ func (a *API) saleReturn(c fiber.Ctx) error {
 		return err
 	}
 	p := httpx.P(c)
-	var returnID int64
+	var returnID string
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		var receipt string
@@ -509,7 +509,7 @@ func (a *API) saleReturn(c fiber.Ctx) error {
 		var total float64
 		n := 0
 		for i, it := range httpx.Items(body, "items") {
-			pid, _ := httpx.Int(it, "product_id")
+			pid, _ := httpx.UUID(it, "product_id")
 			qty, _ := httpx.Num(it, "quantity")
 			var name string
 			var sold, price float64

@@ -28,12 +28,12 @@ func (a *API) productResource() *Resource {
 			{Name: "item_type", Enum: en("product", "service"), Default: "product", Filter: true},
 			{Name: "sku", Search: true},
 			{Name: "barcode", Search: true},
-			{Name: "category_id", Kind: Int, Filter: true, Ref: &Ref{Key: "category", Table: "categories"}},
+			{Name: "category_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "category", Table: "categories"}},
 			{Name: "unit"},
 			{Name: "selling_price", Kind: Num, Required: true, Min: F(0)},
 			{Name: "purchase_price", Kind: Num, Min: F(0), Default: 0.0},
 			{Name: "price_type", Enum: en("single", "wholesale", "customer_type"), Default: "single"},
-			{Name: "tax_id", Kind: Int, Ref: &Ref{Key: "tax", Table: "taxes"}},
+			{Name: "tax_id", Kind: UUID, Ref: &Ref{Key: "tax", Table: "taxes"}},
 			{Name: "discount_type", Enum: en("percent", "amount")},
 			{Name: "discount_value", Kind: Num, Min: F(0)},
 			{Name: "wholesale_prices", Kind: JSON, Default: []any{}},
@@ -54,8 +54,8 @@ func (a *API) productResource() *Resource {
 			{Name: "online_description"},
 		},
 		Filters: []Filter{stockStatusFilter},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
-			if id == 0 && (vals["sku"] == nil || vals["sku"] == "") {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+			if id == "" && (vals["sku"] == nil || vals["sku"] == "") {
 				sku, err := nextSKU(ctx, h.Tx, h.P.BranchID)
 				if err != nil {
 					return err
@@ -67,7 +67,7 @@ func (a *API) productResource() *Resource {
 			}
 			return nil
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id int64, created bool) error {
+		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
 			if !created {
 				return nil
 			}
@@ -87,7 +87,7 @@ func (a *API) productResource() *Resource {
 	}
 }
 
-func nextSKU(ctx context.Context, q db.Querier, branchID int64) (string, error) {
+func nextSKU(ctx context.Context, q db.Querier, branchID string) (string, error) {
 	var n int64
 	err := q.QueryRow(ctx, `SELECT COALESCE(MAX(NULLIF(regexp_replace(sku, '^P', ''), '')::bigint), 0) + 1 FROM products WHERE branch_id = $1 AND sku ~ '^P[0-9]{1,15}$'`, branchID).Scan(&n)
 	return fmt.Sprintf("P%06d", n), err
@@ -109,9 +109,9 @@ func (a *API) registerCatalog() {
 		if sku == "" {
 			return httpx.Invalid("sku", "Required")
 		}
-		exclude, _ := strconv.ParseInt(c.Query("exclude_id"), 10, 64)
+		exclude := httpx.QueryUUID(c, "exclude_id")
 		var taken bool
-		err := a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND id <> $3 AND deleted_at IS NULL)`,
+		err := a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND ($3::uuid IS NULL OR id <> $3::uuid) AND deleted_at IS NULL)`,
 			httpx.P(c).BranchID, sku, exclude).Scan(&taken)
 		if err != nil {
 			return err
@@ -131,7 +131,7 @@ func (a *API) registerCatalog() {
 		row["sku"] = nil
 		row["barcode"] = nil
 		row["stock"] = 0.0
-		out, err := a.CRUD.Save(c, products, row, 0)
+		out, err := a.CRUD.Save(c, products, row, "")
 		if err != nil {
 			return err
 		}
@@ -166,15 +166,15 @@ func (a *API) registerCatalog() {
 
 // selectedProducts returns products filtered by ?product_ids[]= (all when empty).
 func (a *API) selectedProducts(c fiber.Ctx) ([]map[string]any, error) {
-	ids := []int64{}
+	ids := []string{}
 	for _, s := range httpx.QueryArray(c, "product_ids") {
-		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-			ids = append(ids, n)
+		if s = strings.ToLower(strings.TrimSpace(s)); httpx.IsUUID(s) {
+			ids = append(ids, s)
 		}
 	}
 	return db.JSONRows(c.Context(), a.DB, `SELECT p.id, p.name, p.sku, COALESCE(p.barcode, p.sku) AS barcode, p.selling_price, p.unit,
 		(SELECT name FROM categories WHERE id = p.category_id) AS category_name
-		FROM products p WHERE p.branch_id = $1 AND p.deleted_at IS NULL AND (cardinality($2::bigint[]) = 0 OR p.id = ANY($2)) ORDER BY p.name LIMIT 5000`,
+		FROM products p WHERE p.branch_id = $1 AND p.deleted_at IS NULL AND (cardinality($2::uuid[]) = 0 OR p.id = ANY($2)) ORDER BY p.name LIMIT 5000`,
 		httpx.P(c).BranchID, ids)
 }
 
@@ -244,14 +244,14 @@ func (a *API) productBarcodes(c fiber.Ctx) error {
 }
 
 // productStock adjusts stock and writes a movement; it is the single place stock changes.
-func productStock(ctx context.Context, tx pgx.Tx, branchID, productID int64, change float64, typ, ref string, unitCost *float64, actorID int64, actor, note string) (float64, error) {
+func productStock(ctx context.Context, tx pgx.Tx, branchID, productID string, change float64, typ, ref string, unitCost *float64, actorID string, actor, note string) (float64, error) {
 	var after float64
 	var track bool
 	err := tx.QueryRow(ctx, `UPDATE products SET stock = stock + $3, updated_at = now() WHERE id = $1 AND branch_id = $2 RETURNING stock, track_stock`,
 		productID, branchID, change).Scan(&after, &track)
 	if err != nil {
 		if db.IsNoRows(err) {
-			return 0, httpx.Invalid("product_id", fmt.Sprintf("Product %d not found.", productID))
+			return 0, httpx.Invalid("product_id", fmt.Sprintf("Product %s not found.", productID))
 		}
 		return 0, err
 	}
@@ -259,7 +259,7 @@ func productStock(ctx context.Context, tx pgx.Tx, branchID, productID int64, cha
 		return after, nil
 	}
 	var actorRef any
-	if actorID > 0 {
+	if actorID != "" {
 		actorRef = actorID
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO stock_movements (branch_id, product_id, type, reference, quantity_change, stock_after, unit_cost, actor_id, actor_name, note)

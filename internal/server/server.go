@@ -18,6 +18,7 @@ import (
 
 	"github.com/roysitumorang/lestari-backend/internal/api"
 	"github.com/roysitumorang/lestari-backend/internal/config"
+	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
 )
 
@@ -30,7 +31,12 @@ func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*fiber.App, *
 		BodyLimit:    cfg.BodyLimitMB << 20,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second,
-		ErrorHandler: httpx.ErrorHandler(func(err error) { log.Error("request failed", "err", err) }),
+		ErrorHandler: func(c fiber.Ctx, err error) error {
+			if db.IsInvalidText(err) {
+				err = httpx.BadRequest("An id or value in the request is malformed; ids are UUIDs.")
+			}
+			return httpx.ErrorHandler(func(err error) { log.Error("request failed", "err", err) })(c, err)
+		},
 	})
 	app.Use(recover.New(recover.Config{EnableStackTrace: !cfg.IsProduction()}))
 	app.Use(requestid.New())

@@ -20,7 +20,7 @@ import (
 
 type Info struct {
 	Email, Password string
-	StoreID         int64
+	StoreID         string
 }
 
 const (
@@ -32,7 +32,7 @@ type client struct {
 	app    *fiber.App
 	prefix string
 	token  string
-	branch int64
+	branch string
 	err    error
 }
 
@@ -48,8 +48,8 @@ func (c *client) do(method, path string, body any) map[string]any {
 	req := httptest.NewRequest(method, c.prefix+path, r)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	if c.branch > 0 {
-		req.Header.Set("X-Branch-Id", fmt.Sprint(c.branch))
+	if c.branch != "" {
+		req.Header.Set("X-Branch-Id", c.branch)
 	}
 	res, err := c.app.Test(req, fiber.TestConfig{Timeout: 30 * time.Second})
 	if err != nil {
@@ -70,14 +70,12 @@ func (c *client) do(method, path string, body any) map[string]any {
 	return out
 }
 
-func id(m map[string]any) int64 {
+func id(m map[string]any) string {
 	if m == nil {
-		return 0
+		return ""
 	}
-	if v, ok := m["id"].(float64); ok {
-		return int64(v)
-	}
-	return 0
+	v, _ := m["id"].(string)
+	return v
 }
 
 // Demo creates (or recreates) the demo store.
@@ -87,7 +85,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	if _, err := a.DB.Exec(ctx, `DELETE FROM stores WHERE id IN (SELECT store_id FROM users WHERE email = $1)`, DemoEmail); err != nil {
 		return info, err
 	}
-	var userID int64
+	var userID string
 	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
 		var err error
 		userID, info.StoreID, err = a.Provision(ctx, tx, api.Provision{StoreName: "Apotik Lestari", OwnerName: "Abigael Lestari", Email: DemoEmail, Password: DemoPassword, Phone: "+6281234567890"})
@@ -116,14 +114,18 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	now := time.Now().In(a.Loc)
 
 	// ---------- settings ----------
+	var province, city string
+	if err := a.DB.QueryRow(ctx, `SELECT p.id, c.id FROM provinces p JOIN cities c ON c.province_id = p.id WHERE p.code = '12' AND c.name = 'KABUPATEN TOBA'`).Scan(&province, &city); err != nil {
+		return info, err
+	}
 	c.do("PUT", "/settings/store", map[string]any{"name": "Apotik Lestari", "owner_name": "Abigael Lestari", "phone": "+6281234567890", "address": "Jl. Sisingamangaraja No. 12, Balige",
-		"business_type": "Pharmacy & beauty", "province_id": 12, "city_id": 5, "latitude": 2.3333, "longitude": 99.0667, "motto": "Sehat bersama Lestari"})
+		"business_type": "Pharmacy & beauty", "province_id": province, "city_id": city, "latitude": 2.3333, "longitude": 99.0667, "motto": "Sehat bersama Lestari"})
 	c.do("PUT", "/settings/points", map[string]any{"is_enabled": true, "earn_spend_amount": 10000, "earn_points": 1, "redeem_point_value": 100})
 	c.do("PUT", "/settings/link-page", map[string]any{"is_enabled": true, "username": "apotiklestari", "slogan": "Apotek keluarga di Balige",
 		"links": []any{map[string]any{"type": "whatsapp", "label": "Chat with us", "url": "https://wa.me/6281234567890", "is_active": true}}})
 
 	// ---------- master data ----------
-	cats := map[string]int64{}
+	cats := map[string]string{}
 	for i, n := range []string{"Medicine", "Vitamins", "Personal care", "Drinks", "Medical devices"} {
 		cats[n] = id(c.do("POST", "/categories", map[string]any{"name": n, "sort_order": i + 1}))
 	}
@@ -150,8 +152,8 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 		{"Isotonic drink 500ml", "Drinks", "bottle", 8000, 5200, 96, 24}, {"Digital thermometer", "Medical devices", "pcs", 45000, 28000, 12, 3},
 		{"Blood pressure monitor", "Medical devices", "pcs", 420000, 310000, 4, 2},
 	}
-	var productIDs []int64
-	left := map[int64]float64{} // stock the seed may still sell
+	var productIDs []string
+	left := map[string]float64{} // stock the seed may still sell
 	for i, p := range prods {
 		body := map[string]any{"name": p.name, "category_id": cats[p.cat], "unit": p.unit, "selling_price": p.price, "purchase_price": p.cost, "stock": p.stock,
 			"minimum_stock": p.min, "barcode": fmt.Sprintf("899%010d", 1000+i), "show_in_online_store": true}
@@ -168,7 +170,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	}
 	c.do("POST", "/products", map[string]any{"name": "Blood pressure check", "item_type": "service", "selling_price": 10000, "category_id": cats["Medical devices"]})
 
-	var customers []int64
+	var customers []string
 	for i, n := range []string{"Rina Simanjuntak", "Budi Hutapea", "Sari Panjaitan", "Joko Sitorus", "Maria Nainggolan", "Toko Obat Sehat (reseller)"} {
 		t := member
 		if i == 5 {
@@ -177,7 +179,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 		customers = append(customers, id(c.do("POST", "/customers", map[string]any{"name": n, "phone": fmt.Sprintf("+62812000%04d", i+1), "code": fmt.Sprintf("C%03d", i+1),
 			"customer_type_id": t, "address": "Balige, Toba"})))
 	}
-	var suppliers []int64
+	var suppliers []string
 	for i, n := range []string{"PT Kimia Farma Trading", "CV Medika Sumatera", "PT Enseval Putera"} {
 		suppliers = append(suppliers, id(c.do("POST", "/suppliers", map[string]any{"name": n, "contact_person": "Sales " + fmt.Sprint(i+1), "phone": fmt.Sprintf("+6261400%04d", i+1), "code": fmt.Sprintf("S%02d", i+1), "address": "Medan"})))
 	}
@@ -197,16 +199,16 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 		"items": []any{map[string]any{"product_id": productIDs[5], "quantity": 40, "unit_cost": 30500}, map[string]any{"product_id": productIDs[9], "quantity": 20, "unit_cost": 20500}}})
 
 	// ---------- sales over the last 30 days ----------
-	var drawer int64
+	var drawer string
 	if d := c.do("GET", "/cash-drawers", nil); d != nil {
 		if arr, ok := d["data"].([]any); ok && len(arr) > 0 {
-			drawer = int64(arr[0].(map[string]any)["id"].(float64))
+			drawer, _ = arr[0].(map[string]any)["id"].(string)
 		}
 	}
 	methods := []string{"cash", "cash", "cash", "qris", "debit", "e_wallet"}
 	for day := 29; day >= 0 && c.err == nil; day-- {
 		date := now.AddDate(0, 0, -day)
-		var shift int64
+		var shift string
 		if day <= 6 {
 			shift = id(c.do("POST", "/shifts", map[string]any{"cash_drawer_id": drawer, "opening_cash": 200000}))
 		}
@@ -236,13 +238,13 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 			if rng.Intn(8) == 0 {
 				body["fee_ids"] = []any{packing}
 			}
-			if shift > 0 {
+			if shift != "" {
 				body["shift_id"] = shift
 			}
 			c.do("POST", "/sales", body)
 		}
-		if shift > 0 && day > 0 {
-			c.do("POST", fmt.Sprintf("/shifts/%d/close", shift), map[string]any{"actual_cash": 200000 + float64(rng.Intn(5))*100000})
+		if shift != "" && day > 0 {
+			c.do("POST", fmt.Sprintf("/shifts/%s/close", shift), map[string]any{"actual_cash": 200000 + float64(rng.Intn(5))*100000})
 		}
 	}
 	// a credit sale with partial payment, then an instalment
@@ -251,11 +253,11 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	if credit != nil {
 		if recv := c.do("GET", "/receivables?status=unpaid", nil); recv != nil {
 			if arr, ok := recv["data"].([]any); ok && len(arr) > 0 {
-				rid := int64(arr[0].(map[string]any)["id"].(float64))
-				c.do("POST", fmt.Sprintf("/receivables/%d/payments", rid), map[string]any{"payment_date": now.Format("2006-01-02"), "amount": 50000, "payment_method": "cash"})
+				rid, _ := arr[0].(map[string]any)["id"].(string)
+				c.do("POST", fmt.Sprintf("/receivables/%s/payments", rid), map[string]any{"payment_date": now.Format("2006-01-02"), "amount": 50000, "payment_method": "cash"})
 			}
 		}
-		c.do("POST", fmt.Sprintf("/sales/%d/returns", id(credit)), map[string]any{"items": []any{map[string]any{"product_id": productIDs[9], "quantity": 1}}, "reason": "Damaged box"})
+		c.do("POST", fmt.Sprintf("/sales/%s/returns", id(credit)), map[string]any{"items": []any{map[string]any{"product_id": productIDs[9], "quantity": 1}}, "reason": "Damaged box"})
 	}
 
 	// a point redemption (the customer has points from earlier purchases)
@@ -291,7 +293,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	c.do("POST", "/stock-opnames", map[string]any{"opname_date": now.AddDate(0, 0, -3).Format("2006-01-02"), "performed_by_name": "Vina Pazary", "performed_by_role": "cashier",
 		"items": []any{map[string]any{"product_id": productIDs[0], "physical_stock": 140}, map[string]any{"product_id": productIDs[12], "physical_stock": 90, "note": "6 bottles leaking"}}})
 	branch := c.do("POST", "/branches", map[string]any{"name": "Lestari Laguboti", "code": "LGB", "manager_name": "Sari", "phone": "+6281277770000", "email": "laguboti@lestari.id", "password": "cabang12345", "address": "Laguboti, Toba"})
-	if b := id(branch); b > 0 {
+	if b := id(branch); b != "" {
 		c.do("POST", "/stock-transfers", map[string]any{"to_branch_id": b, "transfer_date": now.AddDate(0, 0, -2).Format("2006-01-02"),
 			"items": []any{map[string]any{"product_id": productIDs[0], "quantity": 20}, map[string]any{"product_id": productIDs[11], "quantity": 24}}})
 		c.do("POST", "/stock-transfers", map[string]any{"to_branch_id": b, "transfer_date": now.Format("2006-01-02"), "requires_confirmation": true,
@@ -302,14 +304,14 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	ord := c.do("POST", "/catalog/orders", map[string]any{"customer_name": "Dewi Sinaga", "customer_phone": "+6281311112222", "shipping_address": "Jl. Pagar Batu, Balige",
 		"shipping_method": "own_courier", "shipping_fee": 5000, "payment_method": "bank_transfer", "items": []any{map[string]any{"product_id": productIDs[5], "quantity": 2}}})
 	if ord != nil {
-		c.do("PATCH", fmt.Sprintf("/catalog/orders/%d/status", id(ord)), map[string]any{"status": "processing"})
+		c.do("PATCH", fmt.Sprintf("/catalog/orders/%s/status", id(ord)), map[string]any{"status": "processing"})
 	}
 	c.do("POST", "/catalog/orders", map[string]any{"customer_name": "Andi Pardede", "customer_phone": "+6281333334444", "shipping_method": "takeaway", "payment_method": "direct",
 		"items": []any{map[string]any{"product_id": productIDs[13], "quantity": 1}}})
 	c.do("POST", "/catalog/payment-accounts", map[string]any{"type": "bank", "provider": "BCA", "account_name": "Abigael Lestari", "account_number": "1234567890"})
 	if c.err == nil {
 		// a paid PPOB balance so the cashier can sell
-		ref := fmt.Sprintf("SEED-%d", info.StoreID)
+		ref := "SEED-" + info.StoreID
 		_, c.err = a.DB.Exec(ctx, `INSERT INTO ppob_deposits (branch_id, reference_id, type, payment_method, amount, status, balance_after) SELECT id, $2, 'top_up', 'virtual_account', 500000, 'success', 500000 FROM branches WHERE store_id=$1 AND is_head_office`, info.StoreID, ref)
 	}
 	if prices := c.do("GET", "/ppob/prices/prepaid?per_page=5", nil); prices != nil {
@@ -322,7 +324,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	for i, r := range []int{5, 5, 4, 3, 5, 4} {
 		c.do("POST", "/store-ratings", map[string]any{"rating": r, "customer_name": []string{"Rina", "Budi", "Sari", "Joko", "Maria", "Andi"}[i], "comment": []string{"Friendly staff", "Complete stock", "", "Queue was long", "Great service", "Fast"}[i]})
 	}
-	if c.err == nil && cashier > 0 {
+	if c.err == nil && cashier != "" {
 		_, c.err = a.DB.Exec(ctx, `INSERT INTO staff_attendances (branch_id, staff_id, date, clock_in_at, clock_out_at, status, location)
 			SELECT b.id, $2, d::date, d + interval '7 hours 55 minutes', d + interval '16 hours', CASE WHEN extract(dow FROM d) = 1 THEN 'late' ELSE 'present' END, 'Balige'
 			FROM branches b, generate_series(current_date - 6, current_date - 1, interval '1 day') d WHERE b.store_id = $1 AND b.is_head_office`, info.StoreID, cashier)

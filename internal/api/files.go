@@ -48,8 +48,7 @@ func (a *API) saveUpload(c fiber.Ctx, field, purpose string) (map[string]any, er
 		return nil, httpx.Invalid(field, "Only images (JPG, PNG, WebP, GIF, SVG) and PDF files are allowed.")
 	}
 	p := httpx.P(c)
-	id := auth.RandomToken(16)
-	rel := filepath.Join(strconv.FormatInt(p.StoreID, 10), id+ext)
+	rel := filepath.Join(p.StoreID, auth.RandomToken(16)+ext)
 	dst := filepath.Join(a.Cfg.UploadDir, rel)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return nil, err
@@ -58,8 +57,9 @@ func (a *API) saveUpload(c fiber.Ctx, field, purpose string) (map[string]any, er
 		return nil, err
 	}
 	url := a.Cfg.PublicURL + "/uploads/" + filepath.ToSlash(rel)
-	if _, err := a.DB.Exec(c.Context(), `INSERT INTO uploads (id, store_id, path, url, mime_type, size, purpose) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		id, p.StoreID, rel, url, mime, fh.Size, purpose); err != nil {
+	var id string
+	if err := a.DB.QueryRow(c.Context(), `INSERT INTO uploads (store_id, path, url, mime_type, size, purpose) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+		p.StoreID, rel, url, mime, fh.Size, purpose).Scan(&id); err != nil {
 		return nil, err
 	}
 	return map[string]any{"id": id, "url": url, "mime_type": mime, "size": fh.Size}, nil
@@ -85,8 +85,8 @@ func (a *API) registerRegions() {
 		return httpx.OK(c, raw)
 	})
 	a.addH("GET", "/regions/cities", func(c fiber.Ctx) error {
-		pid, _ := strconv.Atoi(c.Query("province_id"))
-		raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT id, name, province_id FROM cities WHERE ($1 = 0 OR province_id = $1) AND ($2 = '' OR name ILIKE '%'||$2||'%') ORDER BY name`,
+		pid := httpx.QueryUUID(c, "province_id")
+		raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT id, name, province_id FROM cities WHERE ($1::uuid IS NULL OR province_id = $1::uuid) AND ($2 = '' OR name ILIKE '%'||$2||'%') ORDER BY name`,
 			pid, c.Query("q"))
 		if err != nil {
 			return err
@@ -145,7 +145,7 @@ func (a *API) registerNotifications() {
 
 const notificationCols = `id, title, message, source, link_route, attachment_url, read_at, created_at`
 
-func (a *API) notification(c fiber.Ctx, id int64) (map[string]any, error) {
+func (a *API) notification(c fiber.Ctx, id string) (map[string]any, error) {
 	p := httpx.P(c)
 	row, err := db.JSONRow(c.Context(), a.DB, `SELECT `+notificationCols+` FROM notifications WHERE id=$1 AND store_id=$2`, id, p.StoreID)
 	if err == nil && row == nil {

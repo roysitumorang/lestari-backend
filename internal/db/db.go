@@ -135,5 +135,11 @@ func IsForeignKeyViolation(err error) bool {
 	return errors.As(err, &pg) && pg.Code == "23503"
 }
 
+// IsInvalidText reports a malformed literal such as an invalid UUID (22P02).
+func IsInvalidText(err error) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == "22P02"
+}
+
 // IsNoRows reports pgx.ErrNoRows.
 func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }

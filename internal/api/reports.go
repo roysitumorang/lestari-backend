@@ -25,7 +25,11 @@ type rq struct {
 }
 
 func (r *rq) str(k string) string { return strings.TrimSpace(r.c.Query(k)) }
-func (r *rq) id(k string) int64 {
+
+// id returns a UUID query parameter, or nil (SQL NULL) when it is absent or malformed.
+func (r *rq) id(k string) any { return httpx.QueryUUID(r.c, k) }
+
+func (r *rq) int(k string) int64 {
 	n, _ := strconv.ParseInt(r.c.Query(k), 10, 64)
 	return n
 }
@@ -349,7 +353,7 @@ const saleRowCols = `s.id, s.created_at, s.receipt_number, s.cashier_name, s.pay
 
 func (a *API) salesTransactions(r *rq) (*rres, error) {
 	base := `SELECT ` + saleRowCols + ` FROM sales s WHERE ` + salesBase + `
-		AND ($4 = '' OR s.payment_method = $4) AND ($5 = '' OR s.payment_type = $5) AND ($6 = 0 OR s.cashier_id = $6)
+		AND ($4 = '' OR s.payment_method = $4) AND ($5 = '' OR s.payment_type = $5) AND ($6::uuid IS NULL OR s.cashier_id = $6::uuid)
 		AND ($7 = '' OR s.receipt_number ILIKE '%'||$7||'%')`
 	args := []any{r.p.BranchID, r.start, r.end, r.str("payment_method"), r.str("payment_type"), r.id("cashier_id"), r.q}
 	res, err := r.paged(base, "s.created_at DESC", args...)
@@ -365,7 +369,7 @@ func (a *API) salesByProduct(r *rq) (*rres, error) {
 		sum(i.quantity) AS quantity_sold, sum(i.quantity * i.unit_price) AS gross_sales, sum(i.discount_amount + i.promotion_discount) AS discounts,
 		sum(i.subtotal) AS net_sales, sum(i.quantity * i.unit_cost) AS cost_of_goods_sold, sum(i.subtotal - i.quantity * i.unit_cost) AS profit
 		` + saleItemSQL + ` LEFT JOIN products p ON p.id = i.product_id LEFT JOIN categories c ON c.id = COALESCE(i.category_id, p.category_id)
-		WHERE ` + salesBase + ` AND ($4 = 0 OR COALESCE(i.category_id, p.category_id) = $4) AND ($5 = '' OR i.product_name ILIKE '%'||$5||'%' OR p.sku ILIKE '%'||$5||'%')
+		WHERE ` + salesBase + ` AND ($4::uuid IS NULL OR COALESCE(i.category_id, p.category_id) = $4::uuid) AND ($5 = '' OR i.product_name ILIKE '%'||$5||'%' OR p.sku ILIKE '%'||$5||'%')
 		GROUP BY i.product_id`
 	args := []any{r.p.BranchID, r.start, r.end, r.id("category_id"), r.q}
 	res, err := r.paged(base, "net_sales DESC NULLS LAST", args...)
@@ -453,7 +457,7 @@ func (a *API) dailyPurchases(r *rq) (*rres, error) {
 func (a *API) purchaseTransactions(r *rq) (*rres, error) {
 	base := `SELECT p.id, p.purchase_date, p.receipt_number, (SELECT name FROM suppliers WHERE id = p.supplier_id) AS supplier_name, p.staff_name, p.payment_type, p.grand_total, p.paid_amount
 		FROM purchases p WHERE p.branch_id=$1 AND p.purchase_date BETWEEN $2::date AND $3::date AND ($4 = '' OR p.payment_type = $4)
-		AND ($5 = 0 OR p.staff_id = $5) AND ($6 = 0 OR p.supplier_id = $6) AND ($7 = '' OR p.receipt_number ILIKE '%'||$7||'%')`
+		AND ($5::uuid IS NULL OR p.staff_id = $5::uuid) AND ($6::uuid IS NULL OR p.supplier_id = $6::uuid) AND ($7 = '' OR p.receipt_number ILIKE '%'||$7||'%')`
 	args := []any{r.p.BranchID, r.start, r.end, r.str("payment_type"), r.id("staff_id"), r.id("supplier_id"), r.q}
 	res, err := r.paged(base, "p.purchase_date DESC, p.id DESC", args...)
 	if err != nil {
@@ -469,7 +473,7 @@ func (a *API) customerPoints(r *rq) (*rres, error) {
 	base := `SELECT cu.id AS customer_id, cu.name AS customer_name, cu.code AS customer_code, COALESCE(sum(s.points_earned),0) AS points_earned,
 		COALESCE(sum(s.points_redeemed),0) AS points_redeemed, count(s.id) AS transaction_count, cu.points AS points_balance
 		FROM customers cu JOIN sales s ON s.customer_id = cu.id AND ` + salesBase + ` AND (s.points_earned > 0 OR s.points_redeemed > 0)
-		WHERE cu.branch_id = $1 AND ($4 = 0 OR cu.id = $4) AND ($5 = '' OR cu.name ILIKE '%'||$5||'%' OR cu.code ILIKE '%'||$5||'%')
+		WHERE cu.branch_id = $1 AND ($4::uuid IS NULL OR cu.id = $4::uuid) AND ($5 = '' OR cu.name ILIKE '%'||$5||'%' OR cu.code ILIKE '%'||$5||'%')
 		GROUP BY cu.id`
 	args := []any{r.p.BranchID, r.start, r.end, r.id("customer_id"), r.q}
 	res, err := r.paged(base, "points_earned DESC", args...)
@@ -503,7 +507,7 @@ func (a *API) capital(r *rq) (*rres, error) {
 	base := `SELECT p.id AS product_id, p.name AS product_name, p.sku, c.name AS category_name, p.stock, p.purchase_price AS unit_cost,
 		round(GREATEST(p.stock,0) * p.purchase_price, 2) AS capital_value
 		FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.branch_id=$1 AND p.deleted_at IS NULL AND p.track_stock
-		AND ($2 = 0 OR p.category_id = $2) AND ($3 = '' OR p.name ILIKE '%'||$3||'%' OR p.sku ILIKE '%'||$3||'%')`
+		AND ($2::uuid IS NULL OR p.category_id = $2::uuid) AND ($3 = '' OR p.name ILIKE '%'||$3||'%' OR p.sku ILIKE '%'||$3||'%')`
 	args := []any{r.p.BranchID, r.id("category_id"), r.q}
 	res, err := r.paged(base, "capital_value DESC, product_name", args...)
 	if err != nil {
@@ -524,7 +528,7 @@ const shiftCols = `sh.id, sh.opened_at, sh.closed_at, d.name AS cash_drawer_name
 const shiftFrom = ` FROM shifts sh LEFT JOIN cash_drawers d ON d.id = sh.cash_drawer_id LEFT JOIN users u ON u.id = sh.cashier_id`
 
 func (a *API) shifts(r *rq) (*rres, error) {
-	base := `SELECT ` + shiftCols + shiftFrom + ` WHERE sh.branch_id=$1 AND sh.opened_at::date BETWEEN $2::date AND $3::date AND ($4 = 0 OR sh.cash_drawer_id = $4) AND ($5 = 0 OR sh.cashier_id = $5)`
+	base := `SELECT ` + shiftCols + shiftFrom + ` WHERE sh.branch_id=$1 AND sh.opened_at::date BETWEEN $2::date AND $3::date AND ($4::uuid IS NULL OR sh.cash_drawer_id = $4::uuid) AND ($5::uuid IS NULL OR sh.cashier_id = $5::uuid)`
 	return r.paged(base, "sh.opened_at DESC", r.p.BranchID, r.start, r.end, r.id("cash_drawer_id"), r.id("cashier_id"))
 }
 
@@ -603,7 +607,7 @@ func (a *API) shiftPDF(c fiber.Ctx) error {
 
 func (a *API) feesSales(r *rq) (*rres, error) {
 	base := `SELECT s.created_at, s.receipt_number, s.cashier_name, f.fee_name, f.amount FROM sale_fees f JOIN sales s ON s.id = f.sale_id
-		WHERE ` + salesBase + ` AND ($4 = 0 OR s.cashier_id = $4) AND ($5 = '' OR s.payment_method = $5) AND ($6 = '' OR s.receipt_number ILIKE '%'||$6||'%')`
+		WHERE ` + salesBase + ` AND ($4::uuid IS NULL OR s.cashier_id = $4::uuid) AND ($5 = '' OR s.payment_method = $5) AND ($6 = '' OR s.receipt_number ILIKE '%'||$6||'%')`
 	args := []any{r.p.BranchID, r.start, r.end, r.id("cashier_id"), r.str("payment_method"), r.q}
 	res, err := r.paged(base, "s.created_at DESC", args...)
 	if err != nil {
@@ -615,7 +619,7 @@ func (a *API) feesSales(r *rq) (*rres, error) {
 
 func (a *API) feesPurchases(r *rq) (*rres, error) {
 	base := `SELECT p.created_at, p.receipt_number, p.staff_name AS cashier_name, 'Purchase fees' AS fee_name, p.fee_total AS amount FROM purchases p
-		WHERE p.branch_id=$1 AND p.purchase_date BETWEEN $2::date AND $3::date AND p.fee_total > 0 AND ($4 = 0 OR p.staff_id = $4) AND ($5 = '' OR p.receipt_number ILIKE '%'||$5||'%')`
+		WHERE p.branch_id=$1 AND p.purchase_date BETWEEN $2::date AND $3::date AND p.fee_total > 0 AND ($4::uuid IS NULL OR p.staff_id = $4::uuid) AND ($5 = '' OR p.receipt_number ILIKE '%'||$5||'%')`
 	args := []any{r.p.BranchID, r.start, r.end, r.id("staff_id"), r.q}
 	res, err := r.paged(base, "p.created_at DESC", args...)
 	if err != nil {
@@ -627,7 +631,7 @@ func (a *API) feesPurchases(r *rq) (*rres, error) {
 
 func (a *API) mdr(r *rq) (*rres, error) {
 	base := `SELECT s.created_at, s.receipt_number, s.cashier_name, s.payment_method, s.grand_total AS transaction_amount, s.mdr_rate, s.mdr_amount AS amount FROM sales s
-		WHERE ` + salesBase + ` AND s.mdr_amount > 0 AND ($4 = 0 OR s.cashier_id = $4) AND ($5 = '' OR s.payment_method = $5) AND ($6 = '' OR s.receipt_number ILIKE '%'||$6||'%')`
+		WHERE ` + salesBase + ` AND s.mdr_amount > 0 AND ($4::uuid IS NULL OR s.cashier_id = $4::uuid) AND ($5 = '' OR s.payment_method = $5) AND ($6 = '' OR s.receipt_number ILIKE '%'||$6||'%')`
 	args := []any{r.p.BranchID, r.start, r.end, r.id("cashier_id"), r.str("payment_method"), r.q}
 	res, err := r.paged(base, "s.created_at DESC", args...)
 	if err != nil {
@@ -654,7 +658,7 @@ func (a *API) taxReport(r *rq) (*rres, error) {
 
 func (a *API) ppobReport(r *rq) (*rres, error) {
 	base := `SELECT t.created_at, t.reference_id, t.product_name, t.customer_number, t.base_price, t.selling_price, t.selling_price - t.base_price AS profit, t.cashier_name, t.status
-		FROM ppob_transactions t WHERE t.branch_id=$1 AND t.created_at::date BETWEEN $2::date AND $3::date AND ($4 = 0 OR t.cashier_id = $4) AND ($5 = '' OR t.status = $5)
+		FROM ppob_transactions t WHERE t.branch_id=$1 AND t.created_at::date BETWEEN $2::date AND $3::date AND ($4::uuid IS NULL OR t.cashier_id = $4::uuid) AND ($5 = '' OR t.status = $5)
 		AND ($6 = '' OR t.reference_id ILIKE '%'||$6||'%')`
 	args := []any{r.p.BranchID, r.start, r.end, r.id("cashier_id"), r.str("status"), strings.TrimPrefix(r.q, "#")}
 	res, err := r.paged(base, "t.created_at DESC", args...)
@@ -719,7 +723,7 @@ func (a *API) promoProducts(r *rq) (*rres, error) {
 	base := `SELECT i.product_id, max(i.product_name) AS product_name, pr.name AS promotion_name, sum(i.quantity) AS quantity, sum(i.promotion_discount) AS discount_total,
 		sum(i.subtotal) AS net_sales, sum(i.subtotal - i.quantity * i.unit_cost) AS profit, count(DISTINCT s.id) AS transaction_count
 		` + saleItemSQL + ` JOIN promotions pr ON pr.id = i.promotion_id
-		WHERE ` + salesBase + ` AND ($4 = 0 OR i.promotion_id = $4) AND ($5 = '' OR i.product_name ILIKE '%'||$5||'%') GROUP BY i.product_id, pr.name`
+		WHERE ` + salesBase + ` AND ($4::uuid IS NULL OR i.promotion_id = $4::uuid) AND ($5 = '' OR i.product_name ILIKE '%'||$5||'%') GROUP BY i.product_id, pr.name`
 	args := []any{r.p.BranchID, r.start, r.end, r.id("promotion_id"), r.q}
 	res, err := r.paged(base, "net_sales DESC", args...)
 	if err != nil {
@@ -732,7 +736,7 @@ func (a *API) promoProducts(r *rq) (*rres, error) {
 func (a *API) ratings(r *rq) (*rres, error) {
 	base := `SELECT rt.id, rt.created_at, rt.customer_name, rt.rating, rt.comment, rt.tags, s.receipt_number FROM store_ratings rt LEFT JOIN sales s ON s.id = rt.sale_id
 		WHERE rt.branch_id=$1 AND rt.created_at::date BETWEEN $2::date AND $3::date AND ($4 = 0 OR rt.rating = $4)`
-	args := []any{r.p.BranchID, r.start, r.end, r.id("rating")}
+	args := []any{r.p.BranchID, r.start, r.end, r.int("rating")}
 	res, err := r.paged(base, "rt.created_at DESC", args...)
 	if err != nil {
 		return nil, err

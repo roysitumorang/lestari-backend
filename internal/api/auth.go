@@ -47,7 +47,7 @@ func (a *API) login(c fiber.Ctx) error {
 		return err
 	}
 	var (
-		id, storeID  int64
+		id, storeID  string
 		hash, status string
 		tfaOn        bool
 		tfaSecret    *string
@@ -87,7 +87,7 @@ func (a *API) login(c fiber.Ctx) error {
 	_, _ = a.DB.Exec(c.Context(), `UPDATE users SET last_login_at = now(), status = CASE WHEN status = 'invited' THEN 'active' ELSE status END WHERE id = $1`, id)
 	_, _ = a.DB.Exec(c.Context(), `INSERT INTO activity_logs (store_id, user_id, action, description, ip_address, user_agent) VALUES ($1,$2,'sign_in','Signed in',$3,$4)`,
 		storeID, id, c.IP(), c.Get("User-Agent"))
-	user, err := a.userView(c.Context(), id, 0)
+	user, err := a.userView(c.Context(), id, "")
 	if err != nil {
 		return err
 	}
@@ -125,15 +125,15 @@ func (a *API) me(c fiber.Ctx) error {
 }
 
 // userView is the shape of GET /auth/me and the login user.
-func (a *API) userView(ctx context.Context, userID, branchID int64) (map[string]any, error) {
+func (a *API) userView(ctx context.Context, userID, branchID string) (map[string]any, error) {
 	u, err := db.JSONRow(ctx, a.DB, `
 		SELECT u.id, u.name, u.email, u.role, u.avatar_url, u.permissions, u.two_factor_enabled, u.phone, u.phone_verified,
 		  json_build_object('id', s.id, 'name', s.name, 'logo_url', (SELECT value->>'logo_url' FROM settings st JOIN branches hb ON hb.id = st.branch_id WHERE hb.store_id = s.id AND hb.is_head_office AND st.key = 'store'),
 		                    'plan', s.plan, 'plan_expires_at', s.plan_expires_at) AS store,
 		  (SELECT json_build_object('id', b.id, 'name', b.name, 'is_head_office', b.is_head_office) FROM branches b
-		    WHERE b.id = COALESCE(NULLIF($2::bigint, 0), u.branch_id, (SELECT id FROM branches WHERE store_id = s.id AND is_head_office ORDER BY id LIMIT 1))) AS branch,
+		    WHERE b.id = COALESCE($2::uuid, u.branch_id, (SELECT id FROM branches WHERE store_id = s.id AND is_head_office ORDER BY id LIMIT 1))) AS branch,
 		  COALESCE((SELECT array_agg(code ORDER BY code) FROM store_plugins sp WHERE sp.store_id = s.id AND sp.status IN ('active','trial') AND (sp.expires_at IS NULL OR sp.expires_at > now())), '{}') AS active_plugins
-		FROM users u JOIN stores s ON s.id = u.store_id WHERE u.id = $1`, userID, branchID)
+		FROM users u JOIN stores s ON s.id = u.store_id WHERE u.id = $1`, userID, nullID(branchID))
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (a *API) register(c fiber.Ctx) error {
 	if err := v.Err(); err != nil {
 		return err
 	}
-	var userID, storeID int64
+	var userID, storeID string
 	err := a.tx(c.Context(), func(tx pgx.Tx) error {
 		var err error
 		userID, storeID, err = a.Provision(c.Context(), tx, Provision{StoreName: in.StoreName, OwnerName: in.Name, Email: in.Email, Password: in.Password, Phone: in.Phone, ReferralCode: in.Referral})
@@ -226,7 +226,7 @@ func (a *API) register(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	user, _ := a.userView(c.Context(), userID, 0)
+	user, _ := a.userView(c.Context(), userID, "")
 	return httpx.Created(c, fiber.Map{"access_token": tok.AccessToken, "refresh_token": tok.RefreshToken, "token_type": tok.TokenType, "expires_in": tok.ExpiresIn, "user": user})
 }
 
@@ -235,10 +235,10 @@ type Provision struct {
 }
 
 // Provision creates a store, its head office, the owner account and default data.
-func (a *API) Provision(ctx context.Context, tx pgx.Tx, in Provision) (userID, storeID int64, err error) {
-	var referredBy *int64
+func (a *API) Provision(ctx context.Context, tx pgx.Tx, in Provision) (userID, storeID string, err error) {
+	var referredBy *string
 	if in.ReferralCode != "" {
-		var id int64
+		var id string
 		if tx.QueryRow(ctx, `SELECT id FROM stores WHERE upper(referral_code) = upper($1)`, in.ReferralCode).Scan(&id) == nil {
 			referredBy = &id
 		}
@@ -248,7 +248,7 @@ func (a *API) Provision(ctx context.Context, tx pgx.Tx, in Provision) (userID, s
 		strings.TrimSpace(in.StoreName), trialEnd, referredBy).Scan(&storeID); err != nil {
 		return
 	}
-	var branchID int64
+	var branchID string
 	if err = tx.QueryRow(ctx, `INSERT INTO branches (store_id, name, code, is_head_office, phone, email, subscription_expires_at) VALUES ($1,$2,'HQ',true,$3,$4,$5) RETURNING id`,
 		storeID, strings.TrimSpace(in.StoreName), in.Phone, in.Email, trialEnd).Scan(&branchID); err != nil {
 		return
@@ -282,7 +282,7 @@ var defaultNotifications = map[string]any{
 }
 
 // seedBranch gives a new branch its default payment methods, cash drawer and PPOB price list.
-func (a *API) seedBranch(ctx context.Context, tx pgx.Tx, branchID int64) error {
+func (a *API) seedBranch(ctx context.Context, tx pgx.Tx, branchID string) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO payment_methods (branch_id, name, type) VALUES ($1,'Cash','cash'),($1,'Debit card','debit'),($1,'QRIS','qris'),($1,'Bank transfer','bank_transfer')`, branchID); err != nil {
 		return err
 	}

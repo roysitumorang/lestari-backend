@@ -6,9 +6,9 @@ REST API for the **Lestari** back office (point of sale for small shops). It imp
 
 | | |
 |---|---|
-| Language | Go 1.26 |
+| Language | Go 1.27 |
 | HTTP | [Fiber v3](https://github.com/gofiber/fiber) |
-| Database | PostgreSQL 14+ via [pgx v5](https://github.com/jackc/pgx) (pool) |
+| Database | PostgreSQL 18 via [pgx v5](https://github.com/jackc/pgx) (pool); primary keys are `UUID DEFAULT uuidv7()` |
 | JSON | [goccy/go-json](https://github.com/goccy/go-json) (also Fiber's encoder/decoder) |
 | Auth | JWT access tokens ([golang-jwt v5](https://github.com/golang-jwt/jwt), HS256) + rotating refresh tokens, bcrypt passwords, TOTP two-step verification |
 | Files | XLSX/CSV via excelize, PDFs (receipts, invoices, barcode sheets, reports) by a built-in writer, QR codes via go-qrcode |
@@ -75,6 +75,12 @@ transfers, debts, billing, reports) are explicit handlers that run in transactio
 
 ## Behaviour worth knowing
 
+- **Ids are UUID v7.** Every table's primary key is `id UUID PRIMARY KEY DEFAULT uuidv7()` (PostgreSQL 18's built-in
+  generator), and every foreign key / id array is `UUID` / `UUID[]`. The API never generates ids itself: inserts omit
+  `id` and read it back with `RETURNING id`. UUID v7 is time-ordered, so `ORDER BY id` still follows creation order
+  and inserts stay index-friendly. In JSON ids are strings. A path id that is not a UUID answers `404`; a malformed id
+  in a body answers `422` (field validation) or `400`. Provinces keep their Kemendagri number in `code`; missions
+  (a fixed catalogue, not a table) use their `code` as `id`.
 - **Tenancy.** A store has branches; operational data belongs to a branch. Every request acts on the user's
   branch, or on the branch in `X-Branch-Id` (owner/administrator only). Lookups referenced by id are checked to
   belong to the caller's branch/store.
@@ -124,14 +130,14 @@ transfers, debts, billing, reports) are explicit handlers that run in transactio
 
 ```bash
 make test                         # unit tests (route coverage of the client contract)
-make test-integration             # + integration tests against PostgreSQL
+make test-integration             # + integration tests against PostgreSQL 18 (needs uuidv7())
 ```
 
 The integration suite (`TEST_DATABASE_URL`) migrates a database, seeds the demo store through the API, then:
 calls every GET endpoint (lists, details, reports, PDF/XLSX/CSV downloads) with real ids, writes every settings page
 and every editable record back unchanged, and runs the main workflows (wholesale pricing, oversell refusal, stock
 adjustment and opname, credit purchase → payable → payment, transfer with confirmation, vouchers, coin purchases,
-order status rules, uploads, error envelopes).
+order status rules, uploads, error envelopes, UUID v7 ids and malformed-id handling).
 
 `internal/server/testdata/endpoints.txt` is the client's endpoint list; refresh it when the client changes
 (`node tools/generate-endpoints.js` in the client repo, then list `METHOD path` lines).

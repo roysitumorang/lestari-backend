@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -33,14 +32,14 @@ func (a *API) registerBranches() {
 			{Name: "is_head_office", Kind: Bool, ReadOnly: true},
 			{Name: "subscription_expires_at", Kind: Timestamp, ReadOnly: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
 			if h.P.Role != "owner" && h.P.Role != "administrator" {
 				return httpx.Forbidden("Only the owner or an administrator can manage branches.")
 			}
 			delete(vals, "-") // password is handled in AfterWrite
 			return nil
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id int64, created bool) error {
+		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
 			pw := httpx.Str(h.Body, "password")
 			email := strings.ToLower(httpx.Str(h.Body, "email"))
 			if created {
@@ -85,7 +84,7 @@ func (a *API) registerBranches() {
 			}
 			return nil
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id int64) error {
+		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
 			if !h.P.IsOwner() {
 				return httpx.Forbidden("Only the owner can delete branches.")
 			}
@@ -110,11 +109,11 @@ func (a *API) registerBranches() {
 			return "t.branch_id IN (SELECT id FROM branches WHERE store_id = " + b.Add(p.StoreID) + " AND deleted_at IS NULL)"
 		},
 		Fields: []Field{
-			{Name: "branch_id", Kind: Int, ReadOnly: true, Filter: true},
+			{Name: "branch_id", Kind: UUID, ReadOnly: true, Filter: true},
 			{Name: "branch_name", Expr: "(SELECT name FROM branches WHERE id = t.branch_id)"},
 			{Name: "product_name", Col: "name", ReadOnly: true, Search: true},
 			{Name: "sku", ReadOnly: true, Search: true},
-			{Name: "category_id", Kind: Int, ReadOnly: true, Filter: true},
+			{Name: "category_id", Kind: UUID, ReadOnly: true, Filter: true},
 			{Name: "stock", Kind: Num, ReadOnly: true},
 			{Name: "selling_price", Kind: Num, Required: true, Min: F(0)},
 			{Name: "purchase_price", Kind: Num, Min: F(0)},
@@ -134,8 +133,8 @@ func (a *API) copyProducts(c fiber.Ctx) error {
 		return err
 	}
 	var in struct {
-		CategoryIDs  []int64 `json:"category_ids"`
-		IncludeStock bool    `json:"include_stock"`
+		CategoryIDs  []string `json:"category_ids"`
+		IncludeStock bool     `json:"include_stock"`
 	}
 	if err := httpx.Decode(c, &in); err != nil {
 		return err
@@ -151,7 +150,7 @@ func (a *API) copyProducts(c fiber.Ctx) error {
 	hq, target := p.HeadOffice, id
 	cats := in.CategoryIDs
 	if cats == nil {
-		cats = []int64{}
+		cats = []string{}
 	}
 	jobID, err := a.startJob(p.StoreID, "copy_products", in, func(ctx context.Context) (any, error) {
 		var copied int64
@@ -159,7 +158,7 @@ func (a *API) copyProducts(c fiber.Ctx) error {
 			// categories by name
 			if _, err := tx.Exec(ctx, `INSERT INTO categories (branch_id, name, color, sort_order, description)
 				SELECT $2, c.name, c.color, c.sort_order, c.description FROM categories c WHERE c.branch_id = $1
-				AND (cardinality($3::bigint[]) = 0 OR c.id = ANY($3))
+				AND (cardinality($3::uuid[]) = 0 OR c.id = ANY($3))
 				AND NOT EXISTS (SELECT 1 FROM categories x WHERE x.branch_id = $2 AND lower(x.name) = lower(c.name))`, hq, target, cats); err != nil {
 				return err
 			}
@@ -171,7 +170,7 @@ func (a *API) copyProducts(c fiber.Ctx) error {
 				  p.unit, p.selling_price, p.purchase_price, p.price_type, p.discount_type, p.discount_value, p.wholesale_prices, '[]', p.track_stock,
 				  CASE WHEN $4 THEN p.stock ELSE 0 END, p.minimum_stock, p.shelf_location, p.weight_grams, p.track_imei, p.units, p.variants, '[]',
 				  p.points_earned, p.points_to_redeem, p.show_in_online_store, p.description, p.online_description, p.image_url
-				FROM products p WHERE p.branch_id = $1 AND p.deleted_at IS NULL AND (cardinality($3::bigint[]) = 0 OR p.category_id = ANY($3))
+				FROM products p WHERE p.branch_id = $1 AND p.deleted_at IS NULL AND (cardinality($3::uuid[]) = 0 OR p.category_id = ANY($3))
 				AND NOT EXISTS (SELECT 1 FROM products x WHERE x.branch_id = $2 AND lower(x.sku) = lower(p.sku) AND x.deleted_at IS NULL)`, hq, target, cats, in.IncludeStock)
 			if err != nil {
 				return err
@@ -197,8 +196,8 @@ func (a *API) copyProducts(c fiber.Ctx) error {
 
 func (a *API) syncBranchPrices(c fiber.Ctx) error {
 	var in struct {
-		BranchIDs  []int64 `json:"branch_ids"`
-		ProductIDs []int64 `json:"product_ids"`
+		BranchIDs  []string `json:"branch_ids"`
+		ProductIDs []string `json:"product_ids"`
 	}
 	if err := httpx.Decode(c, &in); err != nil {
 		return err
@@ -207,14 +206,14 @@ func (a *API) syncBranchPrices(c fiber.Ctx) error {
 		return httpx.Invalid("branch_ids", "Choose at least one branch.")
 	}
 	if in.ProductIDs == nil {
-		in.ProductIDs = []int64{}
+		in.ProductIDs = []string{}
 	}
 	p := httpx.P(c)
 	tag, err := a.DB.Exec(c.Context(), `UPDATE products bp SET selling_price = hq.selling_price, updated_at = now()
 		FROM products hq WHERE hq.branch_id = $1 AND hq.deleted_at IS NULL
 		  AND (bp.source_product_id = hq.id OR lower(bp.sku) = lower(hq.sku))
 		  AND bp.branch_id = ANY($2) AND bp.branch_id IN (SELECT id FROM branches WHERE store_id = $3) AND bp.branch_id <> $1
-		  AND (cardinality($4::bigint[]) = 0 OR hq.id = ANY($4) OR bp.id = ANY($4))`, p.HeadOffice, in.BranchIDs, p.StoreID, in.ProductIDs)
+		  AND (cardinality($4::uuid[]) = 0 OR hq.id = ANY($4) OR bp.id = ANY($4))`, p.HeadOffice, in.BranchIDs, p.StoreID, in.ProductIDs)
 	if err != nil {
 		return err
 	}
@@ -245,10 +244,10 @@ var periodMonths = map[string]int{"monthly": 1, "quarterly": 3, "yearly": 12}
 
 func (a *API) branchRenewal(c fiber.Ctx) error {
 	var in struct {
-		BranchIDs     []int64 `json:"branch_ids"`
-		Period        string  `json:"period"`
-		PaymentMethod string  `json:"payment_method"`
-		PromoCode     string  `json:"promo_code"`
+		BranchIDs     []string `json:"branch_ids"`
+		Period        string   `json:"period"`
+		PaymentMethod string   `json:"payment_method"`
+		PromoCode     string   `json:"promo_code"`
 	}
 	if err := httpx.Decode(c, &in); err != nil {
 		return err
@@ -279,10 +278,6 @@ func (a *API) branchRenewal(c fiber.Ctx) error {
 	if months == 12 {
 		amount *= 0.85 // yearly discount
 	}
-	ids := make([]string, len(in.BranchIDs))
-	for i, x := range in.BranchIDs {
-		ids[i] = strconv.FormatInt(x, 10)
-	}
 	inv, err := a.createInvoice(c, "branch_renewal", fmt.Sprintf("Renewal of %d branch(es) for %d month(s)", n, months), in.PaymentMethod, amount, in.PromoCode,
 		map[string]any{"branch_ids": in.BranchIDs, "months": months})
 	if err != nil {
@@ -296,7 +291,7 @@ func (a *API) branchRenewal(c fiber.Ctx) error {
 // transferDirection is "out" for the sending branch and "in" for the receiver.
 func transferDirection(p *httpx.Principal, row map[string]any) {
 	row["direction"] = "in"
-	if int64(num(row["from_branch_id"])) == p.BranchID {
+	if from, _ := row["from_branch_id"].(string); from == p.BranchID {
 		row["direction"] = "out"
 	}
 	if fb, ok := row["from_branch"].(map[string]any); ok {
@@ -341,8 +336,8 @@ func (a *API) transferResource() *Resource {
 		},
 		Fields: []Field{
 			{Name: "transfer_number", ReadOnly: true, Search: true},
-			{Name: "from_branch_id", Kind: Int, ReadOnly: true, Ref: &Ref{Key: "from_branch", Table: "branches", ScopeCol: "store_id"}},
-			{Name: "to_branch_id", Kind: Int, Required: true, Ref: &Ref{Key: "to_branch", Table: "branches", ScopeCol: "store_id"}},
+			{Name: "from_branch_id", Kind: UUID, ReadOnly: true, Ref: &Ref{Key: "from_branch", Table: "branches", ScopeCol: "store_id"}},
+			{Name: "to_branch_id", Kind: UUID, Required: true, Ref: &Ref{Key: "to_branch", Table: "branches", ScopeCol: "store_id"}},
 			{Name: "transfer_date", Kind: Date, Required: true},
 			{Name: "requires_confirmation", Kind: Bool, Default: false},
 			{Name: "status", ReadOnly: true, Filter: true},
@@ -354,11 +349,11 @@ func (a *API) transferResource() *Resource {
 		},
 		Filters: []Filter{transferDirectionFilter, transferRoleFilter, dateFrom("t.transfer_date"), dateTo("t.transfer_date")},
 		Post:    transferDirection,
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
-			if id > 0 {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+			if id != "" {
 				return httpx.Conflict("A transfer cannot be edited; delete it and create a new one.")
 			}
-			if to, _ := vals["to_branch_id"].(int64); to == h.P.BranchID {
+			if to, _ := vals["to_branch_id"].(string); to == h.P.BranchID {
 				return httpx.Invalid("to_branch_id", "Choose a different branch.")
 			}
 			num, err := a.nextNumber(ctx, h.Tx, "TRF", "stock_transfers", "transfer_number", "store_id", h.P.StoreID)
@@ -369,12 +364,12 @@ func (a *API) transferResource() *Resource {
 			}
 			return err
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id int64, created bool) error {
+		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
 			return a.saveTransferItems(ctx, h.Tx, h.P, id, httpx.Items(h.Body, "items"))
 		},
-		BeforeDelete: func(ctx context.Context, h *Ctx, id int64) error {
+		BeforeDelete: func(ctx context.Context, h *Ctx, id string) error {
 			var status string
-			var from int64
+			var from string
 			if err := h.Tx.QueryRow(ctx, `SELECT status, from_branch_id FROM stock_transfers WHERE id=$1`, id).Scan(&status, &from); err != nil {
 				return err
 			}
@@ -389,7 +384,7 @@ func (a *API) transferResource() *Resource {
 				return err
 			}
 			for _, x := range items {
-				if x.pid == 0 {
+				if x.pid == "" {
 					continue
 				}
 				if _, err := productStock(ctx, h.Tx, h.P.BranchID, x.pid, x.qty, "transfer_in", "Transfer cancelled", nil, h.P.UserID, h.P.Name, ""); err != nil {
@@ -407,15 +402,15 @@ func (a *API) transferResource() *Resource {
 }
 
 type transferLine struct {
-	pid      int64
+	pid      string
 	sku      string
 	name     string
 	qty      float64
 	received *float64
 }
 
-func transferLines(ctx context.Context, tx pgx.Tx, id int64) ([]transferLine, error) {
-	rows, err := tx.Query(ctx, `SELECT COALESCE(product_id,0), COALESCE(sku,''), product_name, quantity, received_quantity FROM stock_transfer_items WHERE transfer_id=$1 ORDER BY id`, id)
+func transferLines(ctx context.Context, tx pgx.Tx, id string) ([]transferLine, error) {
+	rows, err := tx.Query(ctx, `SELECT COALESCE(product_id::text,''), COALESCE(sku,''), product_name, quantity, received_quantity FROM stock_transfer_items WHERE transfer_id=$1 ORDER BY id`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -432,9 +427,9 @@ func transferLines(ctx context.Context, tx pgx.Tx, id int64) ([]transferLine, er
 }
 
 // saveTransferItems takes stock out of the sender and, without confirmation, puts it into the receiver.
-func (a *API) saveTransferItems(ctx context.Context, tx pgx.Tx, p *httpx.Principal, id int64, items []map[string]any) error {
+func (a *API) saveTransferItems(ctx context.Context, tx pgx.Tx, p *httpx.Principal, id string, items []map[string]any) error {
 	var number string
-	var to int64
+	var to string
 	var confirm bool
 	if err := tx.QueryRow(ctx, `SELECT transfer_number, to_branch_id, requires_confirmation FROM stock_transfers WHERE id=$1`, id).Scan(&number, &to, &confirm); err != nil {
 		return err
@@ -442,7 +437,7 @@ func (a *API) saveTransferItems(ctx context.Context, tx pgx.Tx, p *httpx.Princip
 	v := &httpx.Validation{}
 	n := 0
 	for i, it := range items {
-		pid, ok := httpx.Int(it, "product_id")
+		pid, ok := httpx.UUID(it, "product_id")
 		qty, qok := httpx.Num(it, "quantity")
 		if !ok && !qok {
 			continue
@@ -489,8 +484,8 @@ func (a *API) saveTransferItems(ctx context.Context, tx pgx.Tx, p *httpx.Princip
 
 // receiveIntoBranch adds stock to the matching product (by source or SKU) in the receiving branch,
 // creating the product there when it does not exist yet.
-func receiveIntoBranch(ctx context.Context, tx pgx.Tx, p *httpx.Principal, branchID, sourceID int64, sku string, qty float64, ref string) error {
-	var target int64
+func receiveIntoBranch(ctx context.Context, tx pgx.Tx, p *httpx.Principal, branchID, sourceID string, sku string, qty float64, ref string) error {
+	var target string
 	err := tx.QueryRow(ctx, `SELECT id FROM products WHERE branch_id=$1 AND deleted_at IS NULL AND (source_product_id=$2 OR lower(sku)=lower($3)) ORDER BY (source_product_id=$2) DESC LIMIT 1`,
 		branchID, sourceID, sku).Scan(&target)
 	if db.IsNoRows(err) {
@@ -523,9 +518,9 @@ func (a *API) acceptTransfer(c fiber.Ctx) error {
 		return err
 	}
 	p := httpx.P(c)
-	received := map[int64]float64{}
+	received := map[string]float64{}
 	for _, it := range httpx.Items(body, "items") {
-		pid, ok := httpx.Int(it, "product_id")
+		pid, ok := httpx.UUID(it, "product_id")
 		q, qok := httpx.Num(it, "received_quantity")
 		if ok && qok {
 			received[pid] = q
@@ -534,7 +529,7 @@ func (a *API) acceptTransfer(c fiber.Ctx) error {
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		var number, status string
-		var from, to int64
+		var from, to string
 		if err := tx.QueryRow(ctx, `SELECT transfer_number, status, from_branch_id, to_branch_id FROM stock_transfers WHERE id=$1 AND store_id=$2 FOR UPDATE`, id, p.StoreID).Scan(&number, &status, &from, &to); err != nil {
 			return httpx.NotFound("Stock transfer")
 		}
@@ -564,7 +559,7 @@ func (a *API) acceptTransfer(c fiber.Ctx) error {
 					return err
 				}
 			}
-			if short := l.qty - q; short > 0 && l.pid > 0 {
+			if short := l.qty - q; short > 0 && l.pid != "" {
 				// the shortfall goes back to the sender
 				if _, err := productStock(ctx, tx, from, l.pid, short, "transfer_in", number+" (not received)", nil, p.UserID, p.Name, ""); err != nil {
 					return err
@@ -604,7 +599,7 @@ func (a *API) rejectTransfer(c fiber.Ctx) error {
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		var number, status string
-		var from, to int64
+		var from, to string
 		if err := tx.QueryRow(ctx, `SELECT transfer_number, status, from_branch_id, to_branch_id FROM stock_transfers WHERE id=$1 AND store_id=$2 FOR UPDATE`, id, p.StoreID).Scan(&number, &status, &from, &to); err != nil {
 			return httpx.NotFound("Stock transfer")
 		}
@@ -619,7 +614,7 @@ func (a *API) rejectTransfer(c fiber.Ctx) error {
 			return err
 		}
 		for _, l := range lines {
-			if l.pid > 0 {
+			if l.pid != "" {
 				if _, err := productStock(ctx, tx, from, l.pid, l.qty, "transfer_in", number+" (rejected)", nil, p.UserID, p.Name, ""); err != nil {
 					return err
 				}

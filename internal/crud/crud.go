@@ -33,6 +33,8 @@ const (
 	IntArray  // BIGINT[]
 	StrArray  // TEXT[]
 	Password  // write-only, stored as bcrypt hash in Col
+	UUID      // UUID (ids and foreign keys)
+	UUIDArray // UUID[]
 )
 
 // Ref adds a nested {id, <label>} object next to a foreign-key field.
@@ -134,9 +136,9 @@ type Resource struct {
 	Filters      []Filter
 	ImportKey    string // field used to match rows in update-mode imports
 
-	BeforeWrite  func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error // mutate column values
-	AfterWrite   func(ctx context.Context, h *Ctx, id int64, created bool) error        // child rows etc.
-	BeforeDelete func(ctx context.Context, h *Ctx, id int64) error
+	BeforeWrite  func(ctx context.Context, h *Ctx, vals map[string]any, id string) error // mutate column values
+	AfterWrite   func(ctx context.Context, h *Ctx, id string, created bool) error        // child rows etc.
+	BeforeDelete func(ctx context.Context, h *Ctx, id string) error
 	Detail       func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error
 	// Post adjusts rows returned by list and get, e.g. values relative to the caller.
 	Post func(p *httpx.Principal, row map[string]any)
@@ -244,6 +246,10 @@ func castExpr(k Kind) string {
 		return "::jsonb"
 	case IntArray:
 		return "::bigint[]"
+	case UUID:
+		return "::uuid"
+	case UUIDArray:
+		return "::uuid[]"
 	case StrArray:
 		return "::text[]"
 	}
@@ -389,9 +395,9 @@ func (e *Engine) Rows(c fiber.Ctx, r *Resource, limit int) ([]map[string]any, er
 }
 
 // Fetch loads one row (with Detail enrichment) or returns a 404 error.
-func (e *Engine) Fetch(ctx context.Context, q db.Querier, r *Resource, p *httpx.Principal, id int64) (map[string]any, error) {
+func (e *Engine) Fetch(ctx context.Context, q db.Querier, r *Resource, p *httpx.Principal, id string) (map[string]any, error) {
 	b := &Builder{}
-	where := append(r.baseWhere(b, p), "t.id = "+b.Add(id))
+	where := append(r.baseWhere(b, p), "t.id = "+b.Add(id)+"::uuid")
 	row, err := db.JSONRow(ctx, q, "SELECT "+r.selectList()+" FROM "+r.Table+" t WHERE "+strings.Join(where, " AND "), b.Args...)
 	if err != nil {
 		return nil, err
@@ -430,7 +436,7 @@ func (e *Engine) Create(r *Resource) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		row, err := e.Save(c, r, body, 0)
+		row, err := e.Save(c, r, body, "")
 		if err != nil {
 			return err
 		}
@@ -457,8 +463,8 @@ func (e *Engine) Update(r *Resource) fiber.Handler {
 }
 
 // Values validates a body against the resource fields and returns column values.
-// On update (id > 0) only attributes present in the body are written; send null to clear one.
-func (r *Resource) Values(body map[string]any, id int64) (map[string]any, error) {
+// On update (id != "") only attributes present in the body are written; send null to clear one.
+func (r *Resource) Values(body map[string]any, id string) (map[string]any, error) {
 	v := &httpx.Validation{}
 	vals := map[string]any{}
 	for _, f := range r.Fields {
@@ -466,13 +472,13 @@ func (r *Resource) Values(body map[string]any, id int64) (map[string]any, error)
 			continue
 		}
 		raw, present := body[f.Name]
-		if id > 0 && (f.CreateOnly || !present) {
+		if id != "" && (f.CreateOnly || !present) {
 			continue
 		}
 		if f.Kind == Password {
 			s, _ := raw.(string)
 			if s == "" {
-				if id == 0 && f.Required {
+				if id == "" && f.Required {
 					v.Add(f.Name, "Required")
 				}
 				continue
@@ -493,7 +499,7 @@ func (r *Resource) Values(body map[string]any, id int64) (map[string]any, error)
 			v.Add(f.Name, msg)
 			continue
 		}
-		if val == nil && f.Default != nil && (id == 0 || f.Kind == JSON || f.Kind == IntArray || f.Kind == StrArray || f.Kind == Bool) {
+		if val == nil && f.Default != nil && (id == "" || f.Kind == JSON || f.Kind == IntArray || f.Kind == UUIDArray || f.Kind == StrArray || f.Kind == Bool) {
 			val = f.Default
 		}
 		if val == nil && f.Required {
@@ -503,7 +509,7 @@ func (r *Resource) Values(body map[string]any, id int64) (map[string]any, error)
 		vals[f.col()] = val
 	}
 	for _, f := range r.Fields {
-		if f.Virtual && f.Required && id == 0 {
+		if f.Virtual && f.Required && id == "" {
 			if arr, ok := body[f.Name].([]any); !ok || len(arr) == 0 {
 				v.Add(f.Name, "Add at least one row.")
 			}
@@ -515,12 +521,12 @@ func (r *Resource) Values(body map[string]any, id int64) (map[string]any, error)
 	return vals, nil
 }
 
-// Save creates (id == 0) or updates a row in a transaction and returns the fresh row.
-func (e *Engine) Save(c fiber.Ctx, r *Resource, body map[string]any, id int64) (map[string]any, error) {
+// Save creates (id == "") or updates a row in a transaction and returns the fresh row.
+func (e *Engine) Save(c fiber.Ctx, r *Resource, body map[string]any, id string) (map[string]any, error) {
 	return e.SaveCtx(c.Context(), c, r, body, id)
 }
 
-func (e *Engine) SaveCtx(ctx context.Context, c fiber.Ctx, r *Resource, body map[string]any, id int64) (map[string]any, error) {
+func (e *Engine) SaveCtx(ctx context.Context, c fiber.Ctx, r *Resource, body map[string]any, id string) (map[string]any, error) {
 	p := httpx.P(c)
 	vals, err := r.Values(body, id)
 	if err != nil {
@@ -529,7 +535,7 @@ func (e *Engine) SaveCtx(ctx context.Context, c fiber.Ctx, r *Resource, body map
 	var out map[string]any
 	err = pgx.BeginFunc(ctx, e.DB, func(tx pgx.Tx) error {
 		h := &Ctx{Fiber: c, P: p, Tx: tx, Body: body}
-		if id > 0 {
+		if id != "" {
 			// make sure the row exists in this tenant before writing
 			if _, err := e.Fetch(ctx, tx, r, p, id); err != nil {
 				return err
@@ -548,7 +554,7 @@ func (e *Engine) SaveCtx(ctx context.Context, c fiber.Ctx, r *Resource, body map
 			kinds[f.col()] = f.Kind
 		}
 		b := &Builder{}
-		if id == 0 {
+		if id == "" {
 			for k, v := range r.insertScope(p) {
 				if _, set := vals[k]; !set {
 					vals[k] = v
@@ -579,7 +585,7 @@ func (e *Engine) SaveCtx(ctx context.Context, c fiber.Ctx, r *Resource, body map
 				sets = append(sets, "updated_at = now()")
 			}
 			if len(sets) > 0 {
-				if _, err := tx.Exec(ctx, "UPDATE "+r.Table+" SET "+strings.Join(sets, ", ")+" WHERE id = "+b.Add(id), b.Args...); err != nil {
+				if _, err := tx.Exec(ctx, "UPDATE "+r.Table+" SET "+strings.Join(sets, ", ")+" WHERE id = "+b.Add(id)+"::uuid", b.Args...); err != nil {
 					return mapWriteErr(r, err)
 				}
 			}
@@ -606,7 +612,7 @@ func mapWriteErr(r *Resource, err error) error {
 	return err
 }
 
-func (e *Engine) deleteOne(ctx context.Context, c fiber.Ctx, tx pgx.Tx, r *Resource, id int64) error {
+func (e *Engine) deleteOne(ctx context.Context, c fiber.Ctx, tx pgx.Tx, r *Resource, id string) error {
 	p := httpx.P(c)
 	if _, err := e.Fetch(ctx, tx, r, p, id); err != nil {
 		return err
@@ -644,7 +650,7 @@ func (e *Engine) Delete(r *Resource) fiber.Handler {
 func (e *Engine) BulkDelete(r *Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		var in struct {
-			IDs []int64 `json:"ids"`
+			IDs []string `json:"ids"`
 		}
 		if err := httpx.Decode(c, &in); err != nil {
 			return err
@@ -654,6 +660,9 @@ func (e *Engine) BulkDelete(r *Resource) fiber.Handler {
 		}
 		err := pgx.BeginFunc(c.Context(), e.DB, func(tx pgx.Tx) error {
 			for _, id := range in.IDs {
+				if !httpx.IsUUID(id) {
+					return httpx.Invalid("ids", "Each id must be a UUID.")
+				}
 				if err := e.deleteOne(c.Context(), c, tx, r, id); err != nil {
 					return err
 				}
@@ -806,6 +815,28 @@ func coerce(f Field, raw any) (any, string) {
 			default:
 				return nil, "Must be a list of numbers."
 			}
+		}
+		return out, ""
+	case UUID:
+		s, ok := raw.(string)
+		s = strings.ToLower(strings.TrimSpace(s))
+		if !ok || !httpx.IsUUID(s) {
+			return nil, "Must be a UUID."
+		}
+		return s, ""
+	case UUIDArray:
+		arr, ok := toList(raw)
+		if !ok {
+			return nil, "Must be a list of UUIDs."
+		}
+		out := make([]string, 0, len(arr))
+		for _, it := range arr {
+			s, _ := it.(string)
+			s = strings.ToLower(strings.TrimSpace(s))
+			if !httpx.IsUUID(s) {
+				return nil, "Must be a list of UUIDs."
+			}
+			out = append(out, s)
 		}
 		return out, ""
 	case StrArray:

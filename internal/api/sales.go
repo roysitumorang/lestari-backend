@@ -36,9 +36,9 @@ func (a *API) saleResource() *Resource {
 		Name: "Sales", Singular: "Sale", Table: "sales", DefaultSort: "t.created_at DESC, t.id DESC",
 		Fields: []Field{
 			{Name: "receipt_number", ReadOnly: true, Search: true},
-			{Name: "cashier_id", Kind: Int, ReadOnly: true, Filter: true},
+			{Name: "cashier_id", Kind: UUID, ReadOnly: true, Filter: true},
 			{Name: "cashier_name", ReadOnly: true},
-			{Name: "customer_id", Kind: Int, ReadOnly: true, Filter: true, Ref: &Ref{Key: "customer", Table: "customers"}},
+			{Name: "customer_id", Kind: UUID, ReadOnly: true, Filter: true, Ref: &Ref{Key: "customer", Table: "customers"}},
 			{Name: "customer_name", Expr: "(SELECT name FROM customers WHERE id = t.customer_id)", Search: true},
 			{Name: "payment_method", ReadOnly: true, Filter: true},
 			{Name: "payment_type", ReadOnly: true, Filter: true},
@@ -89,7 +89,7 @@ func (a *API) registerSales() {
 // ---------- create ----------
 
 type saleLineIn struct {
-	ProductID      int64    `json:"product_id"`
+	ProductID      string   `json:"product_id"`
 	VariantName    string   `json:"variant_name"`
 	Quantity       float64  `json:"quantity"`
 	UnitPrice      *float64 `json:"unit_price"`
@@ -100,14 +100,14 @@ type saleLineIn struct {
 type saleIn struct {
 	ReceiptNumber  string       `json:"receipt_number"`
 	CreatedAt      string       `json:"created_at"`
-	CustomerID     *int64       `json:"customer_id"`
-	ShiftID        *int64       `json:"shift_id"`
+	CustomerID     *string      `json:"customer_id"`
+	ShiftID        *string      `json:"shift_id"`
 	PaymentMethod  string       `json:"payment_method"`
 	PaymentType    string       `json:"payment_type"`
 	Items          []saleLineIn `json:"items"`
 	DiscountTotal  float64      `json:"discount_total"`
-	TaxID          *int64       `json:"tax_id"`
-	FeeIDs         []int64      `json:"fee_ids"`
+	TaxID          *string      `json:"tax_id"`
+	FeeIDs         []string     `json:"fee_ids"`
 	PointsRedeemed int          `json:"points_redeemed"`
 	PaidAmount     *float64     `json:"paid_amount"`
 	DueDate        string       `json:"due_date"`
@@ -116,9 +116,9 @@ type saleIn struct {
 }
 
 type productRow struct {
-	ID           int64
+	ID           string
 	Name         string
-	CategoryID   *int64
+	CategoryID   *string
 	Price, Cost  float64
 	PriceType    string
 	DiscType     *string
@@ -133,7 +133,7 @@ type productRow struct {
 	PointsRedeem float64
 }
 
-func (a *API) loadProduct(ctx context.Context, tx pgx.Tx, branchID, id int64) (*productRow, error) {
+func (a *API) loadProduct(ctx context.Context, tx pgx.Tx, branchID, id string) (*productRow, error) {
 	p := &productRow{}
 	var ws, tp, ing, va []byte
 	var pe, pr *float64
@@ -141,7 +141,7 @@ func (a *API) loadProduct(ctx context.Context, tx pgx.Tx, branchID, id int64) (*
 		FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL FOR UPDATE`, id, branchID).
 		Scan(&p.ID, &p.Name, &p.CategoryID, &p.Price, &p.Cost, &p.PriceType, &p.DiscType, &p.DiscValue, &ws, &tp, &ing, &va, &p.Track, &p.Stock, &pe, &pr)
 	if err != nil {
-		return nil, httpx.Invalid("items", fmt.Sprintf("Product %d not found.", id))
+		return nil, httpx.Invalid("items", fmt.Sprintf("Product %s not found.", id))
 	}
 	_ = json.Unmarshal(ws, &p.Wholesale)
 	_ = json.Unmarshal(tp, &p.TypePrices)
@@ -157,7 +157,7 @@ func (a *API) loadProduct(ctx context.Context, tx pgx.Tx, branchID, id int64) (*
 }
 
 // priceFor applies variant, customer-type and wholesale pricing.
-func (p *productRow) priceFor(qty float64, variant string, customerTypeID int64) (price, cost float64) {
+func (p *productRow) priceFor(qty float64, variant string, customerTypeID string) (price, cost float64) {
 	price, cost = p.Price, p.Cost
 	for _, v := range p.Variants {
 		if variant != "" && strings.EqualFold(httpx.Str(v, "name"), variant) {
@@ -181,7 +181,7 @@ func (p *productRow) priceFor(qty float64, variant string, customerTypeID int64)
 		}
 	case "customer_type":
 		for _, t := range p.TypePrices {
-			if id, _ := httpx.Int(t, "customer_type_id"); id == customerTypeID && customerTypeID > 0 {
+			if id, _ := httpx.UUID(t, "customer_type_id"); id == customerTypeID && customerTypeID != "" {
 				if pr, ok := httpx.Num(t, "price"); ok {
 					price = pr
 				}
@@ -240,17 +240,17 @@ func (a *API) createSale(c fiber.Ctx) error {
 		return err
 	}
 
-	var saleID int64
+	var saleID string
 	err := a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		// customer
-		var custTypeID int64
+		var custTypeID string
 		var custTypeName string
 		var custDiscType *string
 		var custDiscVal *float64
 		mult := 1.0
 		if in.CustomerID != nil {
-			err := tx.QueryRow(ctx, `SELECT COALESCE(ct.id,0), COALESCE(ct.name,''), ct.discount_type, ct.discount_value, COALESCE(ct.point_multiplier,1)
+			err := tx.QueryRow(ctx, `SELECT COALESCE(ct.id::text,''), COALESCE(ct.name,''), ct.discount_type, ct.discount_value, COALESCE(ct.point_multiplier,1)
 				FROM customers cu LEFT JOIN customer_types ct ON ct.id = cu.customer_type_id WHERE cu.id=$1 AND cu.branch_id=$2`, *in.CustomerID, p.BranchID).
 				Scan(&custTypeID, &custTypeName, &custDiscType, &custDiscVal, &mult)
 			if err != nil {
@@ -263,12 +263,12 @@ func (a *API) createSale(c fiber.Ctx) error {
 		}
 		storeSet, _ := a.setting(ctx, tx, p.BranchID, "store")
 		allowNegative := storeSet["allow_negative_stock"] == true
-		wanted := map[int64]float64{}
+		wanted := map[string]float64{}
 		type line struct {
 			in                       saleLineIn
 			prod                     *productRow
 			price, cost, disc, promo float64
-			promoID                  *int64
+			promoID                  *string
 			subtotal                 float64
 			pointsEarned             int
 		}
@@ -313,7 +313,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 			if len(prod.Ingredients) > 0 {
 				cost = 0
 				for _, ing := range prod.Ingredients {
-					iid, _ := httpx.Int(ing, "product_id")
+					iid, _ := httpx.UUID(ing, "product_id")
 					iq, _ := httpx.Num(ing, "quantity")
 					var icost float64
 					_ = tx.QueryRow(ctx, `SELECT purchase_price FROM products WHERE id=$1 AND branch_id=$2`, iid, p.BranchID).Scan(&icost)
@@ -330,7 +330,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 		// invoice-level discount: manual + customer type + minimum-purchase promotion
 		invoiceDisc := math.Min(in.DiscountTotal, subtotal)
 		invoiceDisc += discountOf(custDiscType, custDiscVal, subtotal-invoiceDisc)
-		var salePromo *int64
+		var salePromo *string
 		if mp := promos.minimumPurchase(subtotal); mp != nil {
 			invoiceDisc += discountOf(mp.DiscType, mp.DiscValue, subtotal-invoiceDisc)
 			salePromo = &mp.ID
@@ -364,7 +364,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 		if sc, _ := a.setting(ctx, tx, p.BranchID, "service-charge"); sc["is_enabled"] == true && p.HasPlugin("business") {
 			service = round2(net * num(sc["rate"]) / 100)
 		}
-		var taxID *int64
+		var taxID *string
 		var taxName *string
 		var taxRate, taxTotal float64
 		inclusive := false
@@ -457,7 +457,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 		type rule struct {
 			basis, typ string
 			value      float64
-			products   []int64
+			products   []string
 		}
 		var rules []rule
 		for crows.Next() {
@@ -581,7 +581,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 func (a *API) consumeStock(ctx context.Context, tx pgx.Tx, p *httpx.Principal, prod *productRow, qty, dir float64, typ, ref string) error {
 	if len(prod.Ingredients) > 0 {
 		for _, ing := range prod.Ingredients {
-			iid, ok := httpx.Int(ing, "product_id")
+			iid, ok := httpx.UUID(ing, "product_id")
 			iq, _ := httpx.Num(ing, "quantity")
 			if !ok || iq == 0 {
 				continue
@@ -599,7 +599,7 @@ func (a *API) consumeStock(ctx context.Context, tx pgx.Tx, p *httpx.Principal, p
 	return err
 }
 
-func containsID(list []int64, id int64) bool {
+func containsID(list []string, id string) bool {
 	for _, x := range list {
 		if x == id {
 			return true
@@ -611,18 +611,18 @@ func containsID(list []int64, id int64) bool {
 // ---------- promotions in effect ----------
 
 type promo struct {
-	ID        int64
+	ID        string
 	Type      string
 	DiscType  *string
 	DiscValue *float64
 	MinBuy    float64
 	Buy, Get  float64
-	Products  map[int64]bool
+	Products  map[string]bool
 }
 
 type promoSet []promo
 
-func (ps promoSet) forProduct(id int64) *promo {
+func (ps promoSet) forProduct(id string) *promo {
 	for i := range ps {
 		if ps[i].Type != "minimum_purchase" && ps[i].Products[id] {
 			return &ps[i]
@@ -641,15 +641,15 @@ func (ps promoSet) minimumPurchase(subtotal float64) *promo {
 	return best
 }
 
-func (a *API) activePromotions(ctx context.Context, tx pgx.Tx, branchID int64, at time.Time, customerTypeID int64) (promoSet, error) {
+func (a *API) activePromotions(ctx context.Context, tx pgx.Tx, branchID string, at time.Time, customerTypeID string) (promoSet, error) {
 	at = at.In(a.Loc)
 	day := strings.ToLower(at.Weekday().String())
 	rows, err := tx.Query(ctx, `SELECT id, type, discount_type, discount_value, COALESCE(minimum_purchase,0), COALESCE(buy_quantity,0), COALESCE(get_quantity,0), products
 		FROM promotions WHERE branch_id=$1 AND is_active AND start_date <= $2::date AND end_date >= $2::date
 		AND (cardinality(days) = 0 OR $3 = ANY(days))
 		AND (start_time IS NULL OR start_time <= $4) AND (end_time IS NULL OR end_time >= $4)
-		AND (cardinality(customer_type_ids) = 0 OR $5 = ANY(customer_type_ids))
-		ORDER BY id`, branchID, at.Format("2006-01-02"), day, at.Format("15:04"), customerTypeID)
+		AND (cardinality(customer_type_ids) = 0 OR $5::uuid = ANY(customer_type_ids))
+		ORDER BY id`, branchID, at.Format("2006-01-02"), day, at.Format("15:04"), nullID(customerTypeID))
 	if err != nil {
 		return nil, err
 	}
@@ -663,9 +663,9 @@ func (a *API) activePromotions(ctx context.Context, tx pgx.Tx, branchID int64, a
 		}
 		var list []map[string]any
 		_ = json.Unmarshal(prods, &list)
-		pr.Products = map[int64]bool{}
+		pr.Products = map[string]bool{}
 		for _, it := range list {
-			if id, ok := httpx.Int(it, "product_id"); ok {
+			if id, ok := httpx.UUID(it, "product_id"); ok {
 				pr.Products[id] = true
 			}
 		}
@@ -688,7 +688,7 @@ func (a *API) voidSale(c fiber.Ctx) error {
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		var receipt string
-		var customerID *int64
+		var customerID *string
 		var earned, redeemed int
 		if err := tx.QueryRow(ctx, `SELECT receipt_number, customer_id, points_earned, points_redeemed FROM sales WHERE id=$1 AND branch_id=$2 FOR UPDATE`, id, p.BranchID).
 			Scan(&receipt, &customerID, &earned, &redeemed); err != nil {
@@ -699,7 +699,7 @@ func (a *API) voidSale(c fiber.Ctx) error {
 			return err
 		}
 		type it struct {
-			pid int64
+			pid string
 			qty float64
 		}
 		var items []it
@@ -740,7 +740,7 @@ func (a *API) voidSale(c fiber.Ctx) error {
 
 func (a *API) openShift(c fiber.Ctx) error {
 	var in struct {
-		CashDrawerID int64   `json:"cash_drawer_id"`
+		CashDrawerID string  `json:"cash_drawer_id"`
 		OpeningCash  float64 `json:"opening_cash"`
 	}
 	if err := httpx.Decode(c, &in); err != nil {
@@ -789,7 +789,7 @@ func (a *API) closeShift(c fiber.Ctx) error {
 
 // ---------- documents ----------
 
-func (a *API) storeHeader(ctx context.Context, branchID int64) (name, address, phone string) {
+func (a *API) storeHeader(ctx context.Context, branchID string) (name, address, phone string) {
 	s, _ := a.setting(ctx, a.DB, branchID, "store")
 	return fmt.Sprint(s["name"]), strOr(s["address"], ""), strOr(s["phone"], "")
 }

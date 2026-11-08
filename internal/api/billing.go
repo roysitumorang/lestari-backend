@@ -100,7 +100,7 @@ func (a *API) createInvoice(c fiber.Ctx, kind, desc, method string, amount float
 			return err
 		}
 		mb, _ := json.Marshal(meta)
-		var id int64
+		var id string
 		if method == "coin" {
 			if kind == "coin_topup" {
 				return httpx.Invalid("payment_method", "Coins cannot be bought with coins.")
@@ -139,8 +139,8 @@ func (a *API) createInvoice(c fiber.Ctx, kind, desc, method string, amount float
 }
 
 // applyInvoice performs what was bought once an invoice is paid.
-func (a *API) applyInvoice(ctx context.Context, tx pgx.Tx, id int64) error {
-	var storeID int64
+func (a *API) applyInvoice(ctx context.Context, tx pgx.Tx, id string) error {
+	var storeID string
 	var kind string
 	var amount float64
 	var raw []byte
@@ -167,10 +167,12 @@ func (a *API) applyInvoice(ctx context.Context, tx pgx.Tx, id int64) error {
 			storeID, fmt.Sprint(meta["code"]), months)
 		return err
 	case "branch_renewal":
-		ids := []int64{}
+		ids := []string{}
 		if arr, ok := meta["branch_ids"].([]any); ok {
 			for _, x := range arr {
-				ids = append(ids, int64(num(x)))
+				if id, ok := x.(string); ok && httpx.IsUUID(id) {
+					ids = append(ids, id)
+				}
 			}
 		}
 		_, err := tx.Exec(ctx, `UPDATE branches SET subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, now()), now()) + make_interval(months => $3) WHERE store_id=$1 AND id = ANY($2)`,
@@ -184,7 +186,7 @@ func (a *API) applyInvoice(ctx context.Context, tx pgx.Tx, id int64) error {
 func (a *API) markInvoicePaid(ctx context.Context, number string) (bool, error) {
 	paid := false
 	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-		var id, storeID int64
+		var id, storeID string
 		var desc string
 		err := tx.QueryRow(ctx, `UPDATE invoices SET status='paid', paid_at=now(), updated_at=now() WHERE invoice_number=$1 AND status='pending' RETURNING id, store_id, description`, number).Scan(&id, &storeID, &desc)
 		if db.IsNoRows(err) {
@@ -206,7 +208,7 @@ func (a *API) markInvoicePaid(ctx context.Context, number string) (bool, error) 
 func (a *API) markDepositPaid(ctx context.Context, ref string) (bool, error) {
 	paid := false
 	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-		var id, branchID int64
+		var id, branchID string
 		var amount float64
 		err := tx.QueryRow(ctx, `SELECT id, branch_id, amount FROM ppob_deposits WHERE reference_id=$1 AND status='pending' FOR UPDATE`, ref).Scan(&id, &branchID, &amount)
 		if db.IsNoRows(err) {
@@ -404,7 +406,7 @@ func (a *API) redeemVoucher(c fiber.Ctx) error {
 	return httpx.OK(c, out)
 }
 
-func (a *API) invoice(c fiber.Ctx, id int64) (map[string]any, error) {
+func (a *API) invoice(c fiber.Ctx, id string) (map[string]any, error) {
 	row, err := db.JSONRow(c.Context(), a.DB, `SELECT `+invoiceCols+` FROM invoices WHERE id=$1 AND store_id=$2`, id, httpx.P(c).StoreID)
 	if err == nil && row == nil {
 		err = httpx.NotFound("Invoice")

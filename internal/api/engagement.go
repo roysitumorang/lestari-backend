@@ -37,7 +37,7 @@ var missions = []mission{
 		`SELECT count(*) FROM sales s JOIN branches b ON b.id = s.branch_id WHERE b.store_id = $1`},
 }
 
-func (a *API) missionRows(ctx context.Context, storeID int64) ([]fiber.Map, error) {
+func (a *API) missionRows(ctx context.Context, storeID string) ([]fiber.Map, error) {
 	claimed := map[string]bool{}
 	rows, err := a.DB.Query(ctx, `SELECT code FROM mission_claims WHERE store_id=$1`, storeID)
 	if err != nil {
@@ -50,7 +50,7 @@ func (a *API) missionRows(ctx context.Context, storeID int64) ([]fiber.Map, erro
 	}
 	rows.Close()
 	out := make([]fiber.Map, 0, len(missions))
-	for i, m := range missions {
+	for _, m := range missions {
 		var n int
 		if err := a.DB.QueryRow(ctx, m.Progress, storeID).Scan(&n); err != nil {
 			return nil, err
@@ -65,7 +65,7 @@ func (a *API) missionRows(ctx context.Context, storeID int64) ([]fiber.Map, erro
 		case n >= m.Target:
 			status = "completed"
 		}
-		out = append(out, fiber.Map{"id": i + 1, "code": m.Code, "title": m.Title, "description": m.Description, "reward_type": "coin", "reward_amount": m.Reward,
+		out = append(out, fiber.Map{"id": m.Code, "code": m.Code, "title": m.Title, "description": m.Description, "reward_type": "coin", "reward_amount": m.Reward,
 			"progress": n, "target": m.Target, "status": status, "expires_at": nil, "action_route": m.Route})
 	}
 	return out, nil
@@ -80,16 +80,22 @@ func (a *API) registerEngagement() {
 		return httpx.OK(c, rows)
 	})
 	a.addH("POST", "/missions/:id/claim", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
-		if err != nil || int(id) > len(missions) {
-			return httpx.NotFound("Mission")
-		}
+		// missions are a fixed catalogue, so their id is the mission code
+		code := c.Params("id")
 		p := httpx.P(c)
 		rows, err := a.missionRows(c.Context(), p.StoreID)
 		if err != nil {
 			return err
 		}
-		m := rows[id-1]
+		var m fiber.Map
+		for _, r := range rows {
+			if r["code"] == code {
+				m = r
+			}
+		}
+		if m == nil {
+			return httpx.NotFound("Mission")
+		}
 		if m["status"] != "completed" {
 			if m["status"] == "claimed" {
 				return httpx.Conflict("This reward was already claimed.")
@@ -109,7 +115,7 @@ func (a *API) registerEngagement() {
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"id": id, "status": "claimed", "reward_type": "coin", "reward_amount": m["reward_amount"]})
+		return httpx.OK(c, fiber.Map{"id": code, "status": "claimed", "reward_type": "coin", "reward_amount": m["reward_amount"]})
 	})
 
 	// referral
@@ -231,7 +237,7 @@ func (a *API) registerEngagement() {
 			return httpx.Invalid("rating", "Give 1 to 5 stars.")
 		}
 		var sale any
-		if s, ok := httpx.Int(body, "sale_id"); ok {
+		if s, ok := httpx.UUID(body, "sale_id"); ok {
 			sale = s
 		}
 		tags := []string{}

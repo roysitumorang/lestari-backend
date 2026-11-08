@@ -29,7 +29,7 @@ func (a *API) registerAccount() {
 	a.addH("POST", "/account/deactivation-requests", a.requestDeactivation)
 }
 
-func (a *API) profileRow(ctx context.Context, id int64) (map[string]any, error) {
+func (a *API) profileRow(ctx context.Context, id string) (map[string]any, error) {
 	return db.JSONRow(ctx, a.DB, `SELECT avatar_url, name, username, email, phone, phone_verified, birth_year, gender, address, notifications, two_factor_enabled
 		FROM users WHERE id = $1`, id)
 }
@@ -115,7 +115,7 @@ func (a *API) changePPOBPin(c fiber.Ctx) error {
 
 // ---------- OTPs ----------
 
-func (a *API) createOTP(ctx context.Context, userID int64, purpose, target string) (string, error) {
+func (a *API) createOTP(ctx context.Context, userID string, purpose, target string) (string, error) {
 	var recent int
 	_ = a.DB.QueryRow(ctx, `SELECT count(*) FROM otp_codes WHERE user_id=$1 AND purpose=$2 AND created_at > now() - interval '1 minute'`, userID, purpose).Scan(&recent)
 	if recent > 0 {
@@ -128,8 +128,8 @@ func (a *API) createOTP(ctx context.Context, userID int64, purpose, target strin
 }
 
 // checkOTP consumes a valid code; it allows five attempts per code.
-func (a *API) checkOTP(ctx context.Context, userID int64, purpose, target, code string) error {
-	var id int64
+func (a *API) checkOTP(ctx context.Context, userID string, purpose, target, code string) error {
+	var id string
 	var hash string
 	err := a.DB.QueryRow(ctx, `SELECT id, code_hash FROM otp_codes WHERE user_id=$1 AND purpose=$2 AND ($3 = '' OR target=$3) AND used_at IS NULL AND expires_at > now() AND attempts < 5
 		ORDER BY id DESC LIMIT 1`, userID, purpose, target).Scan(&id, &hash)
@@ -273,7 +273,7 @@ func (a *API) twoFactorDisable(c fiber.Ctx) error {
 
 // ---------- logs & deactivation ----------
 
-func (a *API) activityList(c fiber.Ctx, userID int64) error {
+func (a *API) activityList(c fiber.Ctx, userID string) error {
 	p := httpx.P(c)
 	pg := httpx.Pagination(c, 50)
 	var total int

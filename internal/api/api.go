@@ -169,7 +169,7 @@ func (a *API) now() time.Time { return time.Now().In(a.Loc) }
 func (a *API) today() string { return a.now().Format("2006-01-02") }
 
 // nextNumber builds human-friendly document numbers such as INV/20261108/0007.
-func (a *API) nextNumber(ctx context.Context, q db.Querier, prefix, table, col, scopeCol string, scope int64) (string, error) {
+func (a *API) nextNumber(ctx context.Context, q db.Querier, prefix, table, col, scopeCol, scope string) (string, error) {
 	day := a.now().Format("20060102")
 	base := prefix + "/" + day + "/"
 	var n int
@@ -190,11 +190,19 @@ func (a *API) activity(c fiber.Ctx, action, description string) {
 }
 
 // notify stores an in-app notification for the store.
-func (a *API) notify(ctx context.Context, q db.Querier, storeID int64, branchID *int64, source, title, message, route string) {
+func (a *API) notify(ctx context.Context, q db.Querier, storeID string, branchID *string, source, title, message, route string) {
 	if _, err := q.Exec(ctx, `INSERT INTO notifications (store_id, branch_id, source, title, message, link_route) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''))`,
 		storeID, branchID, source, title, message, route); err != nil {
 		a.Log.Warn("notification", "err", err)
 	}
+}
+
+// nullID turns an empty id into SQL NULL (use with "$n::uuid").
+func nullID(id string) any {
+	if id == "" {
+		return nil
+	}
+	return id
 }
 
 // branchScope / storeScope are crud scopes.

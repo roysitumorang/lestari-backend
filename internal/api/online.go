@@ -53,8 +53,8 @@ func (a *API) orderResource() *Resource {
 			{Name: "items", Kind: JSON, Virtual: true, Required: true},
 		},
 		Filters: []Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
-			if id > 0 {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
+			if id != "" {
 				return httpx.Conflict("Change an order with its status actions.")
 			}
 			num, err := a.nextNumber(ctx, h.Tx, "ORD", "catalog_orders", "order_number", "branch_id", h.P.BranchID)
@@ -65,11 +65,11 @@ func (a *API) orderResource() *Resource {
 			}
 			return err
 		},
-		AfterWrite: func(ctx context.Context, h *Ctx, id int64, created bool) error {
+		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
 			var sub float64
 			n := 0
 			for i, it := range httpx.Items(h.Body, "items") {
-				pid, ok := httpx.Int(it, "product_id")
+				pid, ok := httpx.UUID(it, "product_id")
 				qty, qok := httpx.Num(it, "quantity")
 				if !ok || !qok || qty <= 0 {
 					return httpx.Invalid("items", fmt.Sprintf("Row %d needs a product and a quantity above 0.", i+1))
@@ -128,12 +128,12 @@ func (a *API) registerOnlineCatalog() {
 			{Name: "qris_image_url"},
 			{Name: "is_active", Kind: Bool, Default: true},
 		},
-		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id int64) error {
+		BeforeWrite: func(ctx context.Context, h *Ctx, vals map[string]any, id string) error {
 			typ, _ := vals["type"].(string)
-			if typ == "qris" && vals["qris_image_url"] == nil && id == 0 {
+			if typ == "qris" && vals["qris_image_url"] == nil && id == "" {
 				return httpx.Invalid("qris_image_url", "Upload the QRIS image.")
 			}
-			if (typ == "bank" || typ == "e_wallet") && vals["account_number"] == nil && id == 0 {
+			if (typ == "bank" || typ == "e_wallet") && vals["account_number"] == nil && id == "" {
 				return httpx.Invalid("account_number", "Required")
 			}
 			return nil
@@ -182,7 +182,7 @@ func (a *API) orderStatus(c fiber.Ctx) error {
 				return err
 			}
 			type it struct {
-				pid int64
+				pid string
 				q   float64
 			}
 			var items []it
