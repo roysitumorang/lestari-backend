@@ -1,0 +1,271 @@
+// Package httpx holds the API envelope, errors, the request principal and parsing helpers.
+package httpx
+
+import (
+	"errors"
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/goccy/go-json"
+	"github.com/gofiber/fiber/v3"
+)
+
+// Error is rendered as {"error":{"code","message","fields"}}.
+type Error struct {
+	Status  int                 `json:"-"`
+	Code    string              `json:"code"`
+	Message string              `json:"message"`
+	Fields  map[string][]string `json:"fields,omitempty"`
+}
+
+func (e *Error) Error() string { return e.Message }
+
+func NewError(status int, code, msg string) *Error {
+	return &Error{Status: status, Code: code, Message: msg}
+}
+
+func BadRequest(msg string) *Error { return NewError(400, "bad_request", msg) }
+func Unauthorized(code, msg string) *Error {
+	if code == "" {
+		code = "unauthenticated"
+	}
+	return NewError(401, code, msg)
+}
+func PaymentRequired(code, msg string) *Error { return NewError(402, code, msg) }
+func Forbidden(msg string) *Error             { return NewError(403, "forbidden", msg) }
+func NotFound(what string) *Error             { return NewError(404, "not_found", what+" not found") }
+func Conflict(msg string) *Error              { return NewError(409, "conflict", msg) }
+func NotImplemented(msg string) *Error        { return NewError(501, "not_implemented", msg) }
+
+// Validation collects field errors; call Err() to get nil when there are none.
+type Validation struct{ Fields map[string][]string }
+
+func (v *Validation) Add(field, msg string) {
+	if v.Fields == nil {
+		v.Fields = map[string][]string{}
+	}
+	v.Fields[field] = append(v.Fields[field], msg)
+}
+
+func (v *Validation) Err() error {
+	if len(v.Fields) == 0 {
+		return nil
+	}
+	return &Error{Status: 422, Code: "validation_failed", Message: "Some fields are invalid.", Fields: v.Fields}
+}
+
+func Invalid(field, msg string) error {
+	v := &Validation{}
+	v.Add(field, msg)
+	return v.Err()
+}
+
+// ErrorHandler is installed as Fiber's ErrorHandler.
+func ErrorHandler(log func(err error)) fiber.ErrorHandler {
+	return func(c fiber.Ctx, err error) error {
+		var e *Error
+		var fe *fiber.Error
+		switch {
+		case errors.As(err, &e):
+		case errors.As(err, &fe):
+			code := map[int]string{404: "not_found", 405: "method_not_allowed", 413: "payload_too_large", 429: "too_many_requests"}[fe.Code]
+			if code == "" {
+				code = "http_" + strconv.Itoa(fe.Code)
+			}
+			e = NewError(fe.Code, code, fe.Message)
+		default:
+			if log != nil {
+				log(err)
+			}
+			e = NewError(500, "internal_error", "Something went wrong. Please try again.")
+		}
+		return c.Status(e.Status).JSON(fiber.Map{"error": e})
+	}
+}
+
+// ---------- responses ----------
+
+type Meta struct {
+	Page       int `json:"page"`
+	PerPage    int `json:"per_page"`
+	Total      int `json:"total"`
+	TotalPages int `json:"total_pages"`
+}
+
+func NewMeta(p Page, total int) Meta {
+	tp := 1
+	if p.PerPage > 0 {
+		tp = int(math.Ceil(float64(total) / float64(p.PerPage)))
+	}
+	if tp < 1 {
+		tp = 1
+	}
+	return Meta{Page: p.Page, PerPage: p.PerPage, Total: total, TotalPages: tp}
+}
+
+func OK(c fiber.Ctx, data any) error { return c.JSON(fiber.Map{"data": data}) }
+func Created(c fiber.Ctx, data any) error {
+	return c.Status(201).JSON(fiber.Map{"data": data})
+}
+func NoContent(c fiber.Ctx) error { return c.SendStatus(204) }
+func List(c fiber.Ctx, data any, meta Meta) error {
+	return c.JSON(fiber.Map{"data": data, "meta": meta})
+}
+
+// ---------- request parsing ----------
+
+type Page struct {
+	Page    int
+	PerPage int
+	Offset  int
+}
+
+func Pagination(c fiber.Ctx, def int) Page {
+	p := Page{Page: atoi(c.Query("page"), 1), PerPage: atoi(c.Query("per_page"), def)}
+	if p.Page < 1 {
+		p.Page = 1
+	}
+	if p.PerPage < 1 {
+		p.PerPage = def
+	}
+	if p.PerPage > 1000 {
+		p.PerPage = 1000
+	}
+	p.Offset = (p.Page - 1) * p.PerPage
+	return p
+}
+
+func atoi(s string, def int) int {
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return def
+}
+
+// Body decodes the JSON body into a map (empty map for an empty body).
+func Body(c fiber.Ctx) (map[string]any, error) {
+	b := c.Body()
+	m := map[string]any{}
+	if len(strings.TrimSpace(string(b))) == 0 {
+		return m, nil
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, BadRequest("Request body must be a JSON object.")
+	}
+	return m, nil
+}
+
+// Decode decodes the JSON body into a struct.
+func Decode(c fiber.Ctx, v any) error {
+	b := c.Body()
+	if len(strings.TrimSpace(string(b))) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(b, v); err != nil {
+		return BadRequest("Request body is not valid JSON: " + err.Error())
+	}
+	return nil
+}
+
+// ParamID reads a positive integer path parameter.
+func ParamID(c fiber.Ctx, name string) (int64, error) {
+	n, err := strconv.ParseInt(c.Params(name), 10, 64)
+	if err != nil || n <= 0 {
+		return 0, NotFound("Resource")
+	}
+	return n, nil
+}
+
+// QueryArray returns ?k[]=a&k[]=b (or ?k=a,b) values.
+func QueryArray(c fiber.Ctx, key string) []string {
+	var out []string
+	args := c.RequestCtx().QueryArgs()
+	for _, v := range args.PeekMulti(key + "[]") {
+		out = append(out, string(v))
+	}
+	if len(out) == 0 {
+		if v := c.Query(key); v != "" {
+			for _, s := range strings.Split(v, ",") {
+				if s = strings.TrimSpace(s); s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// DateRange reads start_date / end_date (YYYY-MM-DD), defaulting to today.
+func DateRange(c fiber.Ctx, loc *time.Location) (string, string, error) {
+	today := time.Now().In(loc).Format("2006-01-02")
+	s, e := c.Query("start_date", today), c.Query("end_date", today)
+	for k, v := range map[string]string{"start_date": s, "end_date": e} {
+		if _, err := time.Parse("2006-01-02", v); err != nil {
+			return "", "", Invalid(k, "Use the format YYYY-MM-DD.")
+		}
+	}
+	if e < s {
+		s, e = e, s
+	}
+	return s, e, nil
+}
+
+// ---------- value coercion for map bodies ----------
+
+func Str(m map[string]any, k string) string {
+	switch v := m[k].(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func Num(m map[string]any, k string) (float64, bool) {
+	switch v := m[k].(type) {
+	case float64:
+		return v, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		return f, err == nil
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	}
+	return 0, false
+}
+
+func Int(m map[string]any, k string) (int64, bool) {
+	f, ok := Num(m, k)
+	return int64(f), ok
+}
+
+func Bool(m map[string]any, k string) bool {
+	switch v := m[k].(type) {
+	case bool:
+		return v
+	case string:
+		return v == "true" || v == "1" || v == "on"
+	case float64:
+		return v != 0
+	}
+	return false
+}
+
+func Items(m map[string]any, k string) []map[string]any {
+	arr, _ := m[k].([]any)
+	out := make([]map[string]any, 0, len(arr))
+	for _, it := range arr {
+		if mm, ok := it.(map[string]any); ok {
+			out = append(out, mm)
+		}
+	}
+	return out
+}

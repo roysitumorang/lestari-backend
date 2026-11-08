@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: lestari
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lestari"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/lestari?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+    ports: ["8080:8080"]
+    volumes: [uploads:/app/storage]
+
+volumes:
+  pgdata:
+  uploads:
