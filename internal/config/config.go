@@ -21,6 +21,10 @@ type Config struct {
 	APIPrefix       string        // default /api/v1
 	Timezone        string        // database session time zone, default Asia/Jakarta
 	BodyLimitMB     int
+	// TrustedProxies lists reverse proxies whose ProxyHeader is believed: IPs, CIDR ranges and the keywords
+	// loopback, private, linklocal and unix. Empty = ignore proxy headers and use the TCP peer address.
+	TrustedProxies []string
+	ProxyHeader    string // header carrying the client IP, default X-Forwarded-For
 }
 
 func Load() Config {
@@ -36,15 +40,25 @@ func Load() Config {
 		APIPrefix:       env("API_PREFIX", "/api/v1"),
 		Timezone:        env("APP_TIMEZONE", "Asia/Jakarta"),
 		BodyLimitMB:     atoi(env("BODY_LIMIT_MB", "20"), 20),
+		ProxyHeader:     env("PROXY_HEADER", "X-Forwarded-For"),
 	}
-	if o := strings.TrimSpace(os.Getenv("CORS_ORIGINS")); o != "" {
-		for s := range strings.SplitSeq(o, ",") {
-			if s = strings.TrimSpace(s); s != "" {
-				c.CORSOrigins = append(c.CORSOrigins, s)
-			}
+	// Default: trust a reverse proxy on the same machine (nginx → 127.0.0.1:8080). "none" disables.
+	if tp := strings.TrimSpace(env("TRUSTED_PROXIES", "loopback")); !strings.EqualFold(tp, "none") {
+		c.TrustedProxies = list(tp)
+	}
+	c.CORSOrigins = list(os.Getenv("CORS_ORIGINS"))
+	return c
+}
+
+// list splits a comma-separated value, dropping blanks.
+func list(v string) []string {
+	var out []string
+	for s := range strings.SplitSeq(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
 		}
 	}
-	return c
+	return out
 }
 
 func (c Config) IsProduction() bool { return c.Env == "production" }

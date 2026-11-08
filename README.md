@@ -52,6 +52,8 @@ lestari routes    # list every endpoint
 | `ACCESS_TOKEN_TTL` / `REFRESH_TOKEN_TTL` | `1h` / `720h` | Go durations |
 | `APP_TIMEZONE` | `Asia/Jakarta` | database session time zone (dates in reports) |
 | `BODY_LIMIT_MB` | `20` | |
+| `TRUSTED_PROXIES` | `loopback` | reverse proxies whose `PROXY_HEADER` is believed for the client IP (activity logs, access log): comma-separated IPs/CIDRs and the keywords `loopback`, `private`, `linklocal`, `unix`; `none` = always use the TCP peer. nginx on the same machine needs the default; the API in Docker behind host nginx needs `private` (or the bridge subnet) |
+| `PROXY_HEADER` | `X-Forwarded-For` | or `X-Real-IP`. A forwarded chain is walked right to left past trusted proxies, so clients cannot spoof their address |
 
 ## Project layout
 

@@ -21,6 +21,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      # nginx on the host reaches the container from the Docker bridge network
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-private}
     ports: ["8080:8080"]
     volumes: [uploads:/app/storage]
 

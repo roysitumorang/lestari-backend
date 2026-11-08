@@ -3,8 +3,10 @@ package server
 
 import (
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/goccy/go-json"
@@ -24,13 +26,21 @@ import (
 
 // New returns the configured app and the API (for its route list).
 func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*fiber.App, *api.API) {
+	trust, proxyHeader := trustProxy(cfg, log)
 	app := fiber.New(fiber.Config{
-		AppName:      "lestari-backend",
-		JSONEncoder:  json.Marshal,
-		JSONDecoder:  json.Unmarshal,
-		BodyLimit:    cfg.BodyLimitMB << 20,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 120 * time.Second,
+		// Behind a trusted reverse proxy, c.IP() (activity logs, access log) is the client from ProxyHeader.
+		// With IP validation, an X-Forwarded-For chain is walked right to left past the trusted proxies, so a
+		// client cannot spoof its address by sending its own X-Forwarded-For.
+		ProxyHeader:        proxyHeader,
+		TrustProxy:         proxyHeader != "",
+		TrustProxyConfig:   trust,
+		EnableIPValidation: true,
+		AppName:            "lestari-backend",
+		JSONEncoder:        json.Marshal,
+		JSONDecoder:        json.Unmarshal,
+		BodyLimit:          cfg.BodyLimitMB << 20,
+		ReadTimeout:        30 * time.Second,
+		WriteTimeout:       120 * time.Second,
 		ErrorHandler: func(c fiber.Ctx, err error) error {
 			if db.IsInvalidText(err) {
 				err = httpx.BadRequest("An id or value in the request is malformed; ids are UUIDs.")
@@ -63,4 +73,34 @@ func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*fiber.App, *
 	a := api.New(pool, cfg, log)
 	a.Mount(app.Group(cfg.APIPrefix))
 	return app, a
+}
+
+// trustProxy turns TRUSTED_PROXIES into Fiber's allowlist. It returns an empty header (proxy headers ignored)
+// when no valid proxy is configured.
+func trustProxy(cfg config.Config, log *slog.Logger) (fiber.TrustProxyConfig, string) {
+	var t fiber.TrustProxyConfig
+	for _, p := range cfg.TrustedProxies {
+		switch strings.ToLower(p) {
+		case "loopback":
+			t.Loopback = true
+		case "private":
+			t.Private = true
+		case "linklocal":
+			t.LinkLocal = true
+		case "unix":
+			t.UnixSocket = true
+		default:
+			if net.ParseIP(p) == nil {
+				if _, _, err := net.ParseCIDR(p); err != nil {
+					log.Warn("ignoring invalid TRUSTED_PROXIES entry", "value", p)
+					continue
+				}
+			}
+			t.Proxies = append(t.Proxies, p)
+		}
+	}
+	if !t.Loopback && !t.Private && !t.LinkLocal && !t.UnixSocket && len(t.Proxies) == 0 {
+		return t, ""
+	}
+	return t, cfg.ProxyHeader
 }
