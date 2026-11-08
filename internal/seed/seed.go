@@ -5,6 +5,7 @@ package seed
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math/rand"
@@ -69,6 +70,9 @@ func (c *client) do(method, path string, body any) map[string]any {
 	}
 	return out
 }
+
+// b64 encodes a password the way clients send it.
+func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
 
 func id(m map[string]any) string {
 	if m == nil {
@@ -183,8 +187,8 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	for i, n := range []string{"PT Kimia Farma Trading", "CV Medika Sumatera", "PT Enseval Putera"} {
 		suppliers = append(suppliers, id(c.do("POST", "/suppliers", map[string]any{"name": n, "contact_person": "Sales " + fmt.Sprint(i+1), "phone": fmt.Sprintf("+6261400%04d", i+1), "code": fmt.Sprintf("S%02d", i+1), "address": "Medan"})))
 	}
-	cashier := id(c.do("POST", "/staff", map[string]any{"name": "Vina Pazary", "email": "kasir@lestari.id", "password": "kasir12345", "role": "cashier", "phone": "+6281299990001"}))
-	c.do("POST", "/staff", map[string]any{"name": "Roy Situmorang", "email": "manajer@lestari.id", "password": "manajer12345", "role": "manager"})
+	cashier := id(c.do("POST", "/staff", map[string]any{"name": "Vina Pazary", "email": "kasir@lestari.id", "password": b64("kasir12345"), "role": "cashier", "phone": "+6281299990001"}))
+	c.do("POST", "/staff", map[string]any{"name": "Roy Situmorang", "email": "manajer@lestari.id", "password": b64("manajer12345"), "role": "manager"})
 	c.do("POST", "/promotions", map[string]any{"name": "Vitamin week", "type": "product_discount", "start_date": now.AddDate(0, 0, -10).Format("2006-01-02"), "end_date": now.AddDate(0, 0, 20).Format("2006-01-02"),
 		"discount_type": "percent", "discount_value": 10, "products": []any{map[string]any{"product_id": productIDs[5]}, map[string]any{"product_id": productIDs[6]}}})
 	c.do("POST", "/promotions", map[string]any{"name": "Spend 200K save 5%", "type": "minimum_purchase", "start_date": now.AddDate(0, 0, -30).Format("2006-01-02"), "end_date": now.AddDate(0, 1, 0).Format("2006-01-02"),
@@ -292,7 +296,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	// ---------- stock opname, branch, transfer ----------
 	c.do("POST", "/stock-opnames", map[string]any{"opname_date": now.AddDate(0, 0, -3).Format("2006-01-02"), "performed_by_name": "Vina Pazary", "performed_by_role": "cashier",
 		"items": []any{map[string]any{"product_id": productIDs[0], "physical_stock": 140}, map[string]any{"product_id": productIDs[12], "physical_stock": 90, "note": "6 bottles leaking"}}})
-	branch := c.do("POST", "/branches", map[string]any{"name": "Lestari Laguboti", "code": "LGB", "manager_name": "Sari", "phone": "+6281277770000", "email": "laguboti@lestari.id", "password": "cabang12345", "address": "Laguboti, Toba"})
+	branch := c.do("POST", "/branches", map[string]any{"name": "Lestari Laguboti", "code": "LGB", "manager_name": "Sari", "phone": "+6281277770000", "email": "laguboti@lestari.id", "password": b64("cabang12345"), "address": "Laguboti, Toba"})
 	if b := id(branch); b != "" {
 		c.do("POST", "/stock-transfers", map[string]any{"to_branch_id": b, "transfer_date": now.AddDate(0, 0, -2).Format("2006-01-02"),
 			"items": []any{map[string]any{"product_id": productIDs[0], "quantity": 20}, map[string]any{"product_id": productIDs[11], "quantity": 24}}})

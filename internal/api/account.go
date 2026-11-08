@@ -97,6 +97,10 @@ func (a *API) changePPOBPin(c fiber.Ctx) error {
 		return err
 	}
 	v := &httpx.Validation{}
+	httpx.Passwords(v, map[string]*string{"password": &in.Password})
+	if err := v.Err(); err != nil {
+		return err
+	}
 	if !auth.CheckPassword(hash, in.Password) {
 		v.Add("password", "Password is incorrect.")
 	}
@@ -260,6 +264,10 @@ func (a *API) twoFactorDisable(c fiber.Ctx) error {
 	var hash string
 	if err := a.DB.QueryRow(c.Context(), `SELECT password_hash FROM users WHERE id=$1`, p.UserID).Scan(&hash); err != nil {
 		return err
+	}
+	v := &httpx.Validation{}
+	if httpx.Passwords(v, map[string]*string{"password": &in.Password}); v.Err() != nil {
+		return v.Err()
 	}
 	if !auth.CheckPassword(hash, in.Password) {
 		return httpx.Invalid("password", "Password is incorrect.")

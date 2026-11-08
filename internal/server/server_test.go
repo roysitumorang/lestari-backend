@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -385,6 +386,19 @@ func TestIntegrationWorkflows(t *testing.T) {
 	h.json("GET", "/products/0190a1b2-0000-7000-8000-000000000000", nil, 404)
 	h.json("POST", "/sales", map[string]any{"items": []any{map[string]any{"product_id": 5, "quantity": 1}}}, 400)
 	h.json("POST", "/products", map[string]any{"name": "Bad ref", "selling_price": 1, "category_id": "nope"}, 422)
+
+	// passwords travel base64-encoded
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	login := h.json("POST", "/auth/login", map[string]any{"email": seed.DemoEmail, "password": b64(seed.DemoPassword)}, 200)
+	if login["data"].(map[string]any)["access_token"] == "" {
+		t.Errorf("login: %v", login)
+	}
+	h.json("POST", "/auth/login", map[string]any{"email": seed.DemoEmail, "password": seed.DemoPassword}, 422)
+	h.json("POST", "/auth/login", map[string]any{"email": seed.DemoEmail, "password": b64("wrong-password")}, 401)
+	h.json("POST", "/auth/login", map[string]any{"email": "kasir@lestari.id", "password": b64("kasir12345")}, 200) // created through POST /staff
+	h.json("POST", "/staff", map[string]any{"name": "Plain", "email": "plain@lestari.id", "password": "not base64!", "role": "cashier"}, 422)
+	h.json("PUT", "/auth/password", map[string]any{"current_password": b64(seed.DemoPassword), "new_password": b64("s3cret pässwörd"), "new_password_confirmation": b64("s3cret pässwörd")}, 200)
+	h.json("POST", "/auth/login", map[string]any{"email": seed.DemoEmail, "password": b64("s3cret pässwörd")}, 200)
 
 	// validation and auth errors use the error envelope
 	bad := h.json("POST", "/products", map[string]any{"selling_price": "x"}, 422)

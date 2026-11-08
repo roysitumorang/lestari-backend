@@ -40,7 +40,9 @@ func (a *API) login(c fiber.Ctx) error {
 	if strings.TrimSpace(in.Email) == "" {
 		v.Add("email", "Required")
 	}
-	if in.Password == "" {
+	encoded := in.Password != ""
+	httpx.Passwords(v, map[string]*string{"password": &in.Password})
+	if in.Password == "" && !encoded {
 		v.Add("password", "Required")
 	}
 	if err := v.Err(); err != nil {
@@ -161,6 +163,10 @@ func (a *API) changePassword(c fiber.Ctx) error {
 		return err
 	}
 	v := &httpx.Validation{}
+	httpx.Passwords(v, map[string]*string{"current_password": &in.Current, "new_password": &in.New, "new_password_confirmation": &in.Confirm})
+	if err := v.Err(); err != nil {
+		return err
+	}
 	if !auth.CheckPassword(hash, in.Current) {
 		v.Add("current_password", "Current password is incorrect.")
 	}
@@ -198,6 +204,7 @@ func (a *API) register(c fiber.Ctx) error {
 		return err
 	}
 	v := &httpx.Validation{}
+	httpx.Passwords(v, map[string]*string{"password": &in.Password})
 	if strings.TrimSpace(in.StoreName) == "" {
 		v.Add("store_name", "Required")
 	}

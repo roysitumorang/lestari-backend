@@ -32,7 +32,8 @@ const (
 	JSON      // JSONB array/object
 	IntArray  // BIGINT[]
 	StrArray  // TEXT[]
-	Password  // write-only, stored as bcrypt hash in Col
+	Password  // write-only, sent base64-encoded, stored as bcrypt hash in Col
+	PIN       // write-only numeric PIN (sent as plain digits), stored as bcrypt hash in Col
 	UUID      // UUID (ids and foreign keys)
 	UUIDArray // UUID[]
 )
@@ -191,7 +192,7 @@ func (r *Resource) selectList() string {
 		cols = append(cols, `t.id AS "id"`)
 	}
 	for _, f := range r.Fields {
-		if f.Kind == Password || f.Virtual {
+		if f.Kind == Password || f.Kind == PIN || f.Virtual {
 			continue
 		}
 		expr := "t." + f.col()
@@ -327,7 +328,7 @@ func (r *Resource) orderBy(c fiber.Ctx) string {
 			return "t." + sort + " " + dir + ", t.id " + dir
 		}
 		for _, f := range r.Fields {
-			if f.Kind == Password || f.Kind == JSON {
+			if f.Kind == Password || f.Kind == PIN || f.Kind == JSON {
 				continue
 			}
 			expr := "t." + f.col()
@@ -475,8 +476,16 @@ func (r *Resource) Values(body map[string]any, id string) (map[string]any, error
 		if id != "" && (f.CreateOnly || !present) {
 			continue
 		}
-		if f.Kind == Password {
+		if f.Kind == Password || f.Kind == PIN {
 			s, _ := raw.(string)
+			if f.Kind == Password {
+				plain, ok := httpx.DecodeBase64Password(s)
+				if !ok {
+					v.Add(f.Name, "Send the password base64-encoded.")
+					continue
+				}
+				s = plain
+			}
 			if s == "" {
 				if id == "" && f.Required {
 					v.Add(f.Name, "Required")

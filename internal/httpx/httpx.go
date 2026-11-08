@@ -2,6 +2,7 @@
 package httpx
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math"
@@ -234,6 +235,39 @@ func DateRange(c fiber.Ctx, loc *time.Location) (string, string, error) {
 		s, e = e, s
 	}
 	return s, e, nil
+}
+
+// ---------- passwords ----------
+
+// Passwords travel base64-encoded (standard alphabet, UTF-8 bytes). Base64 is an encoding,
+// not encryption: it keeps any character safe in transit, while TLS protects the content.
+
+// DecodeBase64Password decodes one base64 password; an empty string stays empty.
+func DecodeBase64Password(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", true
+	}
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		if b, err = base64.RawStdEncoding.DecodeString(s); err != nil {
+			return "", false
+		}
+	}
+	return string(b), true
+}
+
+// Passwords decodes base64 password attributes in place, adding a field error for any that is not base64.
+func Passwords(v *Validation, fields map[string]*string) {
+	for name, ptr := range fields {
+		plain, ok := DecodeBase64Password(*ptr)
+		if !ok {
+			v.Add(name, "Send the password base64-encoded.")
+			*ptr = ""
+			continue
+		}
+		*ptr = plain
+	}
 }
 
 // ---------- value coercion for map bodies ----------

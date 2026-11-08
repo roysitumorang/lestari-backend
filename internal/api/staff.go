@@ -48,7 +48,7 @@ func (a *API) staffResource() *Resource {
 			{Name: "password", Kind: Password, Col: "password_hash", Required: true},
 			{Name: "phone", Search: true},
 			{Name: "role", Required: true, Enum: en("administrator", "manager", "cashier"), Default: "cashier", Filter: true},
-			{Name: "ppob_pin", Kind: Password, Col: "ppob_pin_hash"},
+			{Name: "ppob_pin", Kind: PIN, Col: "ppob_pin_hash"},
 			{Name: "branch_id", Kind: UUID, Filter: true, Ref: &Ref{Key: "branch", Table: "branches", ScopeCol: "store_id"}},
 			{Name: "address"},
 			{Name: "status", ReadOnly: true, Filter: true},

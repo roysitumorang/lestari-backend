@@ -15,7 +15,7 @@ import (
 func (r *Resource) ExportColumns() []export.Column {
 	cols := []export.Column{{Key: r.idName(), Label: r.idName(), Format: "number"}}
 	for _, f := range r.Fields {
-		if f.NoExport || f.Virtual || f.Kind == Password || f.Kind == JSON {
+		if f.NoExport || f.Virtual || f.Kind == Password || f.Kind == PIN || f.Kind == JSON {
 			continue
 		}
 		format := map[Kind]string{Int: "number", Num: "number", Bool: "boolean", Date: "date", Timestamp: "datetime"}[f.Kind]
@@ -43,7 +43,7 @@ func (e *Engine) Export(r *Resource) fiber.Handler {
 func (r *Resource) importFields() []Field {
 	var out []Field
 	for _, f := range r.Fields {
-		if f.writable() && f.Kind != Password && f.Kind != JSON {
+		if f.writable() && f.Kind != Password && f.Kind != PIN && f.Kind != JSON {
 			out = append(out, f)
 		}
 	}

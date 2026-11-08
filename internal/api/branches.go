@@ -40,7 +40,7 @@ func (a *API) registerBranches() {
 			return nil
 		},
 		AfterWrite: func(ctx context.Context, h *Ctx, id string, created bool) error {
-			pw := httpx.Str(h.Body, "password")
+			pw, _ := httpx.DecodeBase64Password(httpx.Str(h.Body, "password")) // validated in Values
 			email := strings.ToLower(httpx.Str(h.Body, "email"))
 			if created {
 				if len(pw) < 8 {

@@ -75,6 +75,11 @@ transfers, debts, billing, reports) are explicit handlers that run in transactio
 
 ## Behaviour worth knowing
 
+- **Passwords are base64 on the wire.** `password`, `current_password`, `new_password` and
+  `new_password_confirmation` (login, register, change password, staff and branch accounts, 2FA off, PIN change) must be
+  the base64 of the UTF-8 password (standard alphabet; unpadded is accepted). Anything else is a `422` field error.
+  PINs (`new_pin`, `ppob_pin`) stay plain digits. This is an encoding for transport, not encryption — run the API
+  behind HTTPS. Passwords are stored as bcrypt hashes of the decoded value.
 - **Ids are UUID v7.** Every table's primary key is `id UUID PRIMARY KEY DEFAULT uuidv7()` (PostgreSQL 18's built-in
   generator), and every foreign key / id array is `UUID` / `UUID[]`. The API never generates ids itself: inserts omit
   `id` and read it back with `RETURNING id`. UUID v7 is time-ordered, so `ORDER BY id` still follows creation order
@@ -137,7 +142,7 @@ The integration suite (`TEST_DATABASE_URL`) migrates a database, seeds the demo 
 calls every GET endpoint (lists, details, reports, PDF/XLSX/CSV downloads) with real ids, writes every settings page
 and every editable record back unchanged, and runs the main workflows (wholesale pricing, oversell refusal, stock
 adjustment and opname, credit purchase → payable → payment, transfer with confirmation, vouchers, coin purchases,
-order status rules, uploads, error envelopes, UUID v7 ids and malformed-id handling).
+order status rules, uploads, error envelopes, UUID v7 ids and malformed-id handling, base64 passwords).
 
 `internal/server/testdata/endpoints.txt` is the client's endpoint list; refresh it when the client changes
 (`node tools/generate-endpoints.js` in the client repo, then list `METHOD path` lines).
