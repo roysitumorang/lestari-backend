@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"maps"
 	"strings"
 
 	"github.com/goccy/go-json"
@@ -11,6 +12,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/auth"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 type mission struct {
@@ -37,7 +39,7 @@ var missions = []mission{
 		`SELECT count(*) FROM sales s JOIN branches b ON b.id = s.branch_id WHERE b.store_id = $1`},
 }
 
-func (a *API) missionRows(ctx context.Context, storeID string) ([]fiber.Map, error) {
+func (a *API) missionRows(ctx context.Context, l i18n.Lang, storeID string) ([]fiber.Map, error) {
 	claimed := map[string]bool{}
 	rows, err := a.DB.Query(ctx, `SELECT code FROM mission_claims WHERE store_id=$1`, storeID)
 	if err != nil {
@@ -65,7 +67,7 @@ func (a *API) missionRows(ctx context.Context, storeID string) ([]fiber.Map, err
 		case n >= m.Target:
 			status = "completed"
 		}
-		out = append(out, fiber.Map{"id": m.Code, "code": m.Code, "title": m.Title, "description": m.Description, "reward_type": "coin", "reward_amount": m.Reward,
+		out = append(out, fiber.Map{"id": m.Code, "code": m.Code, "title": l.T(m.Title), "description": l.T(m.Description), "reward_type": "coin", "reward_amount": m.Reward,
 			"progress": n, "target": m.Target, "status": status, "expires_at": nil, "action_route": m.Route})
 	}
 	return out, nil
@@ -73,7 +75,7 @@ func (a *API) missionRows(ctx context.Context, storeID string) ([]fiber.Map, err
 
 func (a *API) registerEngagement() {
 	a.addH("GET", "/missions", func(c fiber.Ctx) error {
-		rows, err := a.missionRows(c.Context(), httpx.P(c).StoreID)
+		rows, err := a.missionRows(c.Context(), httpx.Lang(c), httpx.P(c).StoreID)
 		if err != nil {
 			return err
 		}
@@ -83,7 +85,7 @@ func (a *API) registerEngagement() {
 		// missions are a fixed catalogue, so their id is the mission code
 		code := c.Params("id")
 		p := httpx.P(c)
-		rows, err := a.missionRows(c.Context(), p.StoreID)
+		rows, err := a.missionRows(c.Context(), httpx.Lang(c), p.StoreID)
 		if err != nil {
 			return err
 		}
@@ -216,7 +218,16 @@ func (a *API) registerEngagement() {
 	})
 
 	// loans
-	a.addH("GET", "/loans/providers", func(c fiber.Ctx) error { return httpx.OK(c, loanProviders) })
+	a.addH("GET", "/loans/providers", func(c fiber.Ctx) error {
+		out := make([]fiber.Map, 0, len(loanProviders))
+		for _, p := range loanProviders {
+			m := maps.Clone(p)
+			m["description"] = httpx.T(c, p["description"].(string))
+			m["interest_info"] = httpx.T(c, p["interest_info"].(string))
+			out = append(out, m)
+		}
+		return httpx.OK(c, out)
+	})
 	a.addH("GET", "/loans/applications", func(c fiber.Ctx) error {
 		raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT id, provider_code, amount, tenor_months, purpose, status, created_at FROM loan_applications WHERE store_id=$1 ORDER BY created_at DESC`, httpx.P(c).StoreID)
 		if err != nil {
@@ -323,7 +334,7 @@ func (a *API) listIntegrations(c fiber.Ctx) error {
 		if i.Terms != "" {
 			terms = i.Terms
 		}
-		out = append(out, fiber.Map{"code": i.Code, "name": i.Name, "description": i.Description, "logo_url": nil, "status": s.status, "terms_url": terms, "connected_at": s.connected})
+		out = append(out, fiber.Map{"code": i.Code, "name": httpx.T(c, i.Name), "description": httpx.T(c, i.Description), "logo_url": nil, "status": s.status, "terms_url": terms, "connected_at": s.connected})
 	}
 	return httpx.OK(c, out)
 }
@@ -388,6 +399,6 @@ func (a *API) applyLoan(c fiber.Ctx) error {
 		return err
 	}
 	row["redirect_url"] = prov["info_url"]
-	a.activity(c, "loan_applied", "Applied for a loan with "+in.ProviderCode)
+	a.activity(c, "loan_applied", "Applied for a loan with {provider}", "provider", in.ProviderCode)
 	return httpx.OK(c, row)
 }

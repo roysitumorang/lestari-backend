@@ -78,21 +78,21 @@ func (a *API) dashboard(c fiber.Ctx) error {
 	alerts := []map[string]any{}
 	store, _ := a.setting(ctx, a.DB, p.BranchID, "store")
 	if store["latitude"] == nil {
-		alerts = append(alerts, map[string]any{"type": "store_location", "message": "Your store has no map location yet.", "action_label": "Set location", "action_route": "store"})
+		alerts = append(alerts, map[string]any{"type": "store_location", "message": httpx.T(c, "Your store has no map location yet."), "action_label": httpx.T(c, "Set location"), "action_route": "store"})
 	}
 	var expires *time.Time
 	_ = a.DB.QueryRow(ctx, `SELECT plan_expires_at FROM stores WHERE id=$1`, p.StoreID).Scan(&expires)
 	if expires != nil && time.Until(*expires) < 7*24*time.Hour {
-		msg := "Your subscription ends on " + expires.In(a.Loc).Format("2 Jan 2006") + "."
+		msg := httpx.T(c, "Your subscription ends on {date}.", "date", expires.In(a.Loc).Format("02-01-2006"))
 		if time.Until(*expires) < 0 {
-			msg = "Your subscription has ended."
+			msg = httpx.T(c, "Your subscription has ended.")
 		}
-		alerts = append(alerts, map[string]any{"type": "subscription", "message": msg, "action_label": "Renew", "action_route": "billing"})
+		alerts = append(alerts, map[string]any{"type": "subscription", "message": msg, "action_label": httpx.T(c, "Renew"), "action_route": "billing"})
 	}
 	var used, quota float64
 	_ = a.DB.QueryRow(ctx, `SELECT COALESCE((SELECT sum(size) FROM uploads WHERE store_id=$1),0)/1048576.0, storage_quota_mb FROM stores WHERE id=$1`, p.StoreID).Scan(&used, &quota)
 	if quota > 0 && used/quota > 0.9 {
-		alerts = append(alerts, map[string]any{"type": "storage", "message": "Your storage is almost full.", "action_label": "Add storage", "action_route": "storage"})
+		alerts = append(alerts, map[string]any{"type": "storage", "message": httpx.T(c, "Your storage is almost full."), "action_label": httpx.T(c, "Add storage"), "action_route": "storage"})
 	}
 	return httpx.OK(c, map[string]any{"date": day, "summary": cur, "hourly": hourly, "top_products": top, "low_stock": low, "alerts": alerts})
 }

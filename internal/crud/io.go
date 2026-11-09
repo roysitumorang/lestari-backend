@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 // ExportColumns lists scalar fields plus referenced labels.
@@ -72,7 +74,7 @@ func (e *Engine) ImportTemplate(r *Resource) fiber.Handler {
 				example[f.Name] = "2026-01-31"
 			}
 		}
-		b, err := export.XLSX(r.Name, cols, []map[string]any{example})
+		b, err := export.XLSX(httpx.Lang(c), r.Name, cols, []map[string]any{example})
 		if err != nil {
 			return err
 		}
@@ -159,7 +161,7 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 			}
 			if _, err := e.SaveCtx(ctx, c, r, row, id); err != nil {
 				res.Failed++
-				res.Errors = append(res.Errors, ImportError{rowNo, describe(err)})
+				res.Errors = append(res.Errors, ImportError{rowNo, describe(httpx.Lang(c), err)})
 				continue
 			}
 			if id != "" {
@@ -172,17 +174,22 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 	}
 }
 
-func describe(err error) string {
+func describe(l i18n.Lang, err error) string {
 	he := &httpx.Error{}
 	if errors.As(err, &he) {
 		if len(he.Fields) > 0 {
 			var parts []string
-			for k, v := range he.Fields {
-				parts = append(parts, k+": "+strings.Join(v, " "))
+			for k, msgs := range he.Fields {
+				texts := make([]string, len(msgs))
+				for i, m := range msgs {
+					texts[i] = m.In(l)
+				}
+				parts = append(parts, k+": "+strings.Join(texts, " "))
 			}
+			sort.Strings(parts)
 			return strings.Join(parts, "; ")
 		}
-		return he.Message
+		return l.T(he.Message, he.Args...)
 	}
 	return err.Error()
 }

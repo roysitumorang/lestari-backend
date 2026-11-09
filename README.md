@@ -61,7 +61,8 @@ lestari routes    # list every endpoint
 cmd/lestari/            entry point (serve / migrate / seed / routes)
 internal/config         environment configuration
 internal/db             pgx pool, embedded SQL migrations, JSON query helpers
-internal/httpx          response envelope, errors, request principal, parsing
+internal/httpx          response envelope, errors, request principal, language, parsing
+internal/i18n           English / Bahasa Indonesia: Lang.T(), Accept-Language parsing, dictionary (id.go)
 internal/auth           JWT, refresh tokens, bcrypt, TOTP, auth middleware
 internal/crud           generic list/get/create/update/delete/bulk/import/export engine
 internal/export         XLSX, CSV, PDF writer (text, tables, Code 128, QR)
@@ -74,6 +75,36 @@ Resources that are plain records (products, customers, taxes, …) are declared 
 (fields, types, validation, lookups, filters, hooks); the engine generates SQL, validation errors, the JSON
 shape, CSV/XLSX import & export and an import template. Business operations (sales, purchases, stock,
 transfers, debts, billing, reports) are explicit handlers that run in transactions.
+
+## Languages
+
+The API answers in **English** or **Bahasa Indonesia**:
+
+1. `Accept-Language` (`id`, `id-ID`, `en`, … with q-values) — both clients send it on every request;
+2. otherwise the branch's display setting (`PUT /settings/display {"language": "id"}`);
+3. otherwise English.
+
+Translated: error and validation messages (`error.message`, `error.fields`), import row errors, notifications and
+activity-log descriptions, dashboard alerts, missions, plugins, integrations and loan partners, payment instructions,
+invoice descriptions, outgoing codes and invitations, and generated files — report exports (XLSX / CSV / PDF titles,
+column headers, status values), receipts, invoices, delivery notes, transfer notes, shift reports and menu books.
+CRUD exports and import templates keep their machine headers (`sku`, `name`, …) so they can be imported again.
+Responses carry `Content-Language` and `Vary: Accept-Language`.
+
+Text is written in English with `{placeholders}` and translated where the language is known:
+
+```go
+return httpx.Invalid("items", "Row {row}: product not found.", "row", i+1)   // errors: rendered per request
+a.notify(ctx, tx, store, &to, "back_office", "Transfer accepted", "Transfer {number} was received.", "report-transfers", "number", n)
+tr := httpx.Lang(c).T                                                         // documents
+d.Text(40, 790, 16, true, tr("DELIVERY NOTE"))
+```
+
+Notifications and activity logs are stored untranslated with their placeholder values (`params`, migration
+`0003_i18n`) and translated when listed, so each reader sees their own language. The dictionary is
+`internal/i18n/id.go`; `go test ./internal/i18n` fails when a message has no translation, when placeholders differ,
+or when a message is built with `+` / `fmt.Sprintf` instead of a template. Terminology follows lestari-client
+`js/i18n/id.js`.
 
 ## Behaviour worth knowing
 
@@ -145,7 +176,8 @@ The integration suite (`TEST_DATABASE_URL`) migrates a database, seeds the demo 
 calls every GET endpoint (lists, details, reports, PDF/XLSX/CSV downloads) with real ids, writes every settings page
 and every editable record back unchanged, and runs the main workflows (wholesale pricing, oversell refusal, stock
 adjustment and opname, credit purchase → payable → payment, transfer with confirmation, vouchers, coin purchases,
-order status rules, uploads, error envelopes, UUID v7 ids and malformed-id handling, base64 passwords).
+order status rules, uploads, error envelopes, UUID v7 ids and malformed-id handling, base64 passwords, and messages,
+notifications and files in Bahasa Indonesia via `Accept-Language` or the display setting).
 
 `internal/server/testdata/endpoints.txt` is the client's endpoint list; refresh it when the client changes
 (`node tools/generate-endpoints.js` in the client repo, then list `METHOD path` lines).

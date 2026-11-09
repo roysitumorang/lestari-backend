@@ -72,6 +72,7 @@ type harness struct {
 	a      *api.API
 	token  string
 	branch string
+	lang   string // Accept-Language
 }
 
 func (h *harness) call(method, path string, body any, ctype ...string) (int, []byte, http.Header) {
@@ -90,6 +91,9 @@ func (h *harness) call(method, path string, body any, ctype ...string) (int, []b
 	req.Header.Set("Authorization", "Bearer "+h.token)
 	if h.branch != "" {
 		req.Header.Set("X-Branch-Id", h.branch)
+	}
+	if h.lang != "" {
+		req.Header.Set("Accept-Language", h.lang)
 	}
 	res, err := h.app.Test(req, fiber.TestConfig{Timeout: 60 * time.Second})
 	if err != nil {
@@ -410,6 +414,77 @@ func TestIntegrationWorkflows(t *testing.T) {
 }
 
 var uuidV7 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+
+// TestIntegrationLanguage checks that messages, notifications and files follow Accept-Language, then the
+// branch's display language.
+func TestIntegrationLanguage(t *testing.T) {
+	h := setup(t)
+	errorBody := func(b []byte) (string, map[string][]string) {
+		var e struct {
+			Error struct {
+				Message string              `json:"message"`
+				Fields  map[string][]string `json:"fields"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(b, &e)
+		return e.Error.Message, e.Error.Fields
+	}
+
+	// English by default
+	code, b, _ := h.call("POST", "/taxes", map[string]any{})
+	if msg, fields := errorBody(b); code != 422 || msg != "Some fields are invalid." || fields["name"][0] != "Required" {
+		t.Fatalf("en: %d %s", code, b)
+	}
+	// Bahasa Indonesia via Accept-Language
+	h.lang = "id-ID,id;q=0.9,en;q=0.8"
+	code, b, hdr := h.call("POST", "/taxes", map[string]any{})
+	if msg, fields := errorBody(b); code != 422 || msg != "Beberapa isian tidak valid." || fields["name"][0] != "Wajib diisi" {
+		t.Fatalf("id: %d %s", code, b)
+	}
+	if hdr.Get("Content-Language") != "id" {
+		t.Errorf("Content-Language = %q", hdr.Get("Content-Language"))
+	}
+	code, b, _ = h.call("GET", "/products/00000000-0000-7000-8000-000000000000", nil)
+	if msg, _ := errorBody(b); code != 404 || msg != "Produk tidak ditemukan" {
+		t.Fatalf("id 404: %d %s", code, b)
+	}
+	code, b, _ = h.call("POST", "/sales", map[string]any{"items": []any{map[string]any{"quantity": 0}}})
+	if _, fields := errorBody(b); code != 422 || !strings.Contains(strings.Join(fields["items"], " "), "Baris 1") {
+		t.Fatalf("id row message: %d %s", code, b)
+	}
+	// files: column headers and title in the request language
+	code, b, _ = h.call("GET", "/reports/daily-sales/export?format=csv&start_date=2020-01-01&end_date=2030-01-01", nil)
+	if code != 200 || !strings.Contains(string(b), "Tanggal") {
+		t.Fatalf("id csv: %d %.200s", code, b)
+	}
+	// notifications are stored untranslated and shown in the reader's language
+	var store string
+	if err := h.a.DB.QueryRow(t.Context(), `SELECT store_id FROM users WHERE email='demo@lestari.id'`).Scan(&store); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.a.DB.Exec(t.Context(), `INSERT INTO notifications (store_id, source, title, message, params) VALUES ($1,'back_office','Transfer accepted','Transfer {number} was received.','{"number":"TR-1"}')`, store); err != nil {
+		t.Fatal(err)
+	}
+	code, b, _ = h.call("GET", "/notifications?per_page=50", nil)
+	if code != 200 || !strings.Contains(string(b), "Transfer TR-1 telah diterima.") || strings.Contains(string(b), `"params"`) {
+		t.Fatalf("id notifications: %d %.300s", code, b)
+	}
+	// without Accept-Language the branch's display language decides
+	if code, b, _ := h.call("PUT", "/settings/display", map[string]any{"language": "id"}); code != 200 {
+		t.Fatalf("display: %d %s", code, b)
+	}
+	h.lang = ""
+	code, b, _ = h.call("POST", "/taxes", map[string]any{})
+	if msg, _ := errorBody(b); code != 422 || msg != "Beberapa isian tidak valid." {
+		t.Fatalf("display language: %d %s", code, b)
+	}
+	h.lang = "en"
+	code, b, _ = h.call("POST", "/taxes", map[string]any{})
+	if msg, _ := errorBody(b); code != 422 || msg != "Some fields are invalid." {
+		t.Fatalf("header wins over display language: %d %s", code, b)
+	}
+	_, _, _ = h.call("PUT", "/settings/display", map[string]any{"language": "en"})
+}
 
 func TestTOTP(t *testing.T) {
 	s := auth.NewTOTPSecret()

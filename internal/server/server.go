@@ -56,10 +56,12 @@ func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*fiber.App, *
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:  cfg.CORSOrigins,
 		AllowMethods:  []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:  []string{"Authorization", "Content-Type", "X-Branch-Id", "Accept"},
-		ExposeHeaders: []string{"Content-Disposition"},
+		AllowHeaders:  []string{"Authorization", "Content-Type", "X-Branch-Id", "Accept", "Accept-Language"},
+		ExposeHeaders: []string{"Content-Disposition", "Content-Language"},
 		MaxAge:        3600,
 	}))
+
+	app.Use(httpx.LangMiddleware())
 
 	_ = os.MkdirAll(cfg.UploadDir, 0o750)
 	app.Get("/uploads/*", static.New(filepath.Clean(cfg.UploadDir)))

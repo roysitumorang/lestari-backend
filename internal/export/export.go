@@ -14,9 +14,13 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/gofiber/fiber/v3"
 	"github.com/xuri/excelize/v2"
+
+	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
-// Column describes one exported column; Key may be dotted ("category.name").
+// Column describes one exported column; Key may be dotted ("category.name"). Label is English and is
+// translated into the language of the file.
 type Column struct {
 	Key    string
 	Label  string
@@ -36,7 +40,21 @@ func Value(row map[string]any, key string) any {
 	return cur
 }
 
-func text(v any, format string) string {
+// coded reports columns whose values are codes (statuses, methods, kinds) shown through the dictionary.
+func coded(key string) bool {
+	k := key[strings.LastIndex(key, ".")+1:]
+	return k == "status" || k == "type" || k == "kind" || k == "role" || k == "source" || strings.HasSuffix(k, "_status") || strings.HasSuffix(k, "_method") || strings.HasSuffix(k, "_type")
+}
+
+func cellText(l i18n.Lang, c Column, v any) string {
+	s := text(l, v, c.Format)
+	if _, isStr := v.(string); isStr && coded(c.Key) {
+		return l.T(s)
+	}
+	return s
+}
+
+func text(l i18n.Lang, v any, format string) string {
 	switch x := v.(type) {
 	case nil:
 		return ""
@@ -54,9 +72,9 @@ func text(v any, format string) string {
 		return strconv.FormatFloat(x, 'f', -1, 64)
 	case bool:
 		if x {
-			return "Yes"
+			return l.T("Yes")
 		}
-		return "No"
+		return l.T("No")
 	case []any, map[string]any:
 		b, _ := json.Marshal(x)
 		return string(b)
@@ -64,8 +82,9 @@ func text(v any, format string) string {
 	return fmt.Sprint(v)
 }
 
-// XLSX renders rows into a workbook with a bold header row.
-func XLSX(title string, cols []Column, rows []map[string]any) ([]byte, error) {
+// XLSX renders rows into a workbook with a bold header row; title and labels are translated into l.
+func XLSX(l i18n.Lang, title string, cols []Column, rows []map[string]any) ([]byte, error) {
+	title = l.T(title)
 	f := excelize.NewFile()
 	defer f.Close()
 	sheet := "Sheet1"
@@ -81,10 +100,11 @@ func XLSX(title string, cols []Column, rows []map[string]any) ([]byte, error) {
 	money, _ := f.NewStyle(&excelize.Style{NumFmt: 3})
 	for i, c := range cols {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
-		_ = f.SetCellValue(sheet, cell, c.Label)
+		label := l.T(c.Label)
+		_ = f.SetCellValue(sheet, cell, label)
 		_ = f.SetCellStyle(sheet, cell, cell, bold)
 		colName, _ := excelize.ColumnNumberToName(i + 1)
-		_ = f.SetColWidth(sheet, colName, colName, float64(max(12, min(40, len(c.Label)+4))))
+		_ = f.SetColWidth(sheet, colName, colName, float64(max(12, min(40, len([]rune(label))+4))))
 	}
 	for r, row := range rows {
 		for i, c := range cols {
@@ -97,7 +117,7 @@ func XLSX(title string, cols []Column, rows []map[string]any) ([]byte, error) {
 				}
 				continue
 			}
-			_ = f.SetCellValue(sheet, cell, text(v, c.Format))
+			_ = f.SetCellValue(sheet, cell, cellText(l, c, v))
 		}
 	}
 	_ = f.SetPanes(sheet, &excelize.Panes{Freeze: true, YSplit: 1, TopLeftCell: "A2", ActivePane: "bottomLeft"})
@@ -108,19 +128,19 @@ func XLSX(title string, cols []Column, rows []map[string]any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func CSV(cols []Column, rows []map[string]any) ([]byte, error) {
+func CSV(l i18n.Lang, cols []Column, rows []map[string]any) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString("\xef\xbb\xbf") // BOM so Excel opens UTF-8 correctly
 	w := csv.NewWriter(&buf)
 	head := make([]string, len(cols))
 	for i, c := range cols {
-		head[i] = c.Label
+		head[i] = l.T(c.Label)
 	}
 	_ = w.Write(head)
 	for _, row := range rows {
 		rec := make([]string, len(cols))
 		for i, c := range cols {
-			rec[i] = text(Value(row, c.Key), c.Format)
+			rec[i] = cellText(l, c, Value(row, c.Key))
 		}
 		_ = w.Write(rec)
 	}
@@ -128,8 +148,9 @@ func CSV(cols []Column, rows []map[string]any) ([]byte, error) {
 	return buf.Bytes(), w.Error()
 }
 
-// TablePDF renders rows as a simple landscape table.
-func TablePDF(title, subtitle string, cols []Column, rows []map[string]any) []byte {
+// TablePDF renders rows as a simple landscape table; title and labels are translated into l.
+func TablePDF(l i18n.Lang, title, subtitle string, cols []Column, rows []map[string]any) []byte {
+	title = l.T(title)
 	d := NewPDF(842, 595)
 	const margin = 36.0
 	usable := 842 - 2*margin
@@ -148,7 +169,7 @@ func TablePDF(title, subtitle string, cols []Column, rows []map[string]any) []by
 		y = 522
 		d.Rect(margin, y-4, usable, 14, 0.91)
 		for i, c := range cols {
-			d.Text(margin+float64(i)*colW+2, y, fontSize, true, Fit(c.Label, colW, fontSize))
+			d.Text(margin+float64(i)*colW+2, y, fontSize, true, Fit(l.T(c.Label), colW, fontSize))
 		}
 		y -= 16
 	}
@@ -158,7 +179,7 @@ func TablePDF(title, subtitle string, cols []Column, rows []map[string]any) []by
 			header()
 		}
 		for i, c := range cols {
-			s := text(Value(row, c.Key), c.Format)
+			s := cellText(l, c, Value(row, c.Key))
 			if n, ok := Value(row, c.Key).(float64); ok && (c.Format == "money" || c.Format == "number") {
 				s = Thousands(n)
 			}
@@ -167,7 +188,7 @@ func TablePDF(title, subtitle string, cols []Column, rows []map[string]any) []by
 		y -= fontSize + 5
 	}
 	if len(rows) == 0 {
-		d.Text(margin, y, 9, false, "No data.")
+		d.Text(margin, y, 9, false, l.T("No data."))
 	}
 	return d.Bytes()
 }
@@ -215,11 +236,12 @@ func Send(c fiber.Ctx, filename, contentType string, body []byte) error {
 	return c.Send(body)
 }
 
-// Write picks the format from ?format= (xlsx default) and sends the file.
+// Write picks the format from ?format= (xlsx default) and sends the file in the language of the request.
 func Write(c fiber.Ctx, name, title string, cols []Column, rows []map[string]any) error {
+	l := httpx.Lang(c)
 	switch c.Query("format", "xlsx") {
 	case "csv":
-		b, err := CSV(cols, rows)
+		b, err := CSV(l, cols, rows)
 		if err != nil {
 			return err
 		}
@@ -227,11 +249,11 @@ func Write(c fiber.Ctx, name, title string, cols []Column, rows []map[string]any
 	case "pdf":
 		sub := ""
 		if s, e := c.Query("start_date"), c.Query("end_date"); s != "" {
-			sub = "Period " + s + " – " + e
+			sub = l.T("Period {start} – {end}", "start", s, "end", e)
 		}
-		return Send(c, name+".pdf", "application/pdf", TablePDF(title, sub, cols, rows))
+		return Send(c, name+".pdf", "application/pdf", TablePDF(l, title, sub, cols, rows))
 	default:
-		b, err := XLSX(title, cols, rows)
+		b, err := XLSX(l, title, cols, rows)
 		if err != nil {
 			return err
 		}

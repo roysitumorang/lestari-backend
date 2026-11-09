@@ -143,13 +143,16 @@ func (a *API) registerNotifications() {
 	})
 }
 
-const notificationCols = `id, title, message, source, link_route, attachment_url, read_at, created_at`
+const notificationCols = `id, title, message, params, source, link_route, attachment_url, read_at, created_at`
 
 func (a *API) notification(c fiber.Ctx, id string) (map[string]any, error) {
 	p := httpx.P(c)
 	row, err := db.JSONRow(c.Context(), a.DB, `SELECT `+notificationCols+` FROM notifications WHERE id=$1 AND store_id=$2`, id, p.StoreID)
 	if err == nil && row == nil {
 		err = httpx.NotFound("Notification")
+	}
+	if row != nil {
+		localize(httpx.Lang(c), row, "title", "message")
 	}
 	return row, err
 }
@@ -164,9 +167,12 @@ func (a *API) listNotifications(c fiber.Ctx) error {
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM notifications WHERE `+where, args...).Scan(&total); err != nil {
 		return err
 	}
-	raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT `+notificationCols+` FROM notifications WHERE `+where+` ORDER BY created_at DESC LIMIT `+strconv.Itoa(pg.PerPage)+` OFFSET `+strconv.Itoa(pg.Offset), args...)
+	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT `+notificationCols+` FROM notifications WHERE `+where+` ORDER BY created_at DESC LIMIT `+strconv.Itoa(pg.PerPage)+` OFFSET `+strconv.Itoa(pg.Offset), args...)
 	if err != nil {
 		return err
 	}
-	return httpx.List(c, raw, httpx.NewMeta(pg, total))
+	for _, r := range rows {
+		localize(httpx.Lang(c), r, "title", "message")
+	}
+	return httpx.List(c, rows, httpx.NewMeta(pg, total))
 }

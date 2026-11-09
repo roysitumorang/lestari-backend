@@ -12,6 +12,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 var orderStatuses = en("unpaid", "awaiting_confirmation", "payment_rejected", "processing", "shipped", "delivered", "completed", "returned", "cancelled")
@@ -72,12 +73,12 @@ func (a *API) orderResource() *crud.Resource {
 				pid, ok := httpx.UUID(it, "product_id")
 				qty, qok := httpx.Num(it, "quantity")
 				if !ok || !qok || qty <= 0 {
-					return httpx.Invalid("items", fmt.Sprintf("Row %d needs a product and a quantity above 0.", i+1))
+					return httpx.Invalid("items", "Row {row} needs a product and a quantity above 0.", "row", i+1)
 				}
 				var name string
 				var price float64
 				if err := h.Tx.QueryRow(ctx, `SELECT name, selling_price FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL AND show_in_online_store`, pid, h.P.BranchID).Scan(&name, &price); err != nil {
-					return httpx.Invalid("items", fmt.Sprintf("Row %d: product is not sold online.", i+1))
+					return httpx.Invalid("items", "Row {row}: product is not sold online.", "row", i+1)
 				}
 				s := round2(price * qty)
 				if _, err := h.Tx.Exec(ctx, `INSERT INTO catalog_order_items (order_id, product_id, product_name, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6)`, id, pid, name, qty, price, s); err != nil {
@@ -155,7 +156,7 @@ func (a *API) orderStatus(c fiber.Ctx) error {
 	}
 	to := httpx.Str(body, "status")
 	if !contains(orderStatuses, to) {
-		return httpx.Invalid("status", "Must be one of: "+strings.Join(orderStatuses, ", ")+".")
+		return httpx.Invalid("status", "Must be one of: {values}.", "values", strings.Join(orderStatuses, ", "))
 	}
 	reason := httpx.Str(body, "reason")
 	if (to == "cancelled" || to == "payment_rejected") && reason == "" {
@@ -169,7 +170,7 @@ func (a *API) orderStatus(c fiber.Ctx) error {
 			return httpx.NotFound("Order")
 		}
 		if !contains(orderTransitions[from], to) {
-			return httpx.Conflict(fmt.Sprintf("An order that is %s cannot become %s.", strings.ReplaceAll(from, "_", " "), strings.ReplaceAll(to, "_", " ")))
+			return httpx.Conflict("An order that is {from} cannot become {to}.", "from", i18n.Tr(from), "to", i18n.Tr(to))
 		}
 		os, _ := a.setting(ctx, tx, p.BranchID, "online-store")
 		if os["use_physical_stock"] != false && stockHeld(to) != stockHeld(from) {
@@ -228,24 +229,25 @@ func (a *API) orderInvoice(c fiber.Ctx) error {
 	}
 	name, addr, phone := a.storeHeader(c.Context(), p.BranchID)
 	d := export.NewPDF(595, 842)
+	tr := httpx.Lang(c).T
 	d.Page()
-	d.Text(40, 790, 18, true, "INVOICE")
+	d.Text(40, 790, 18, true, tr("INVOICE"))
 	d.Text(40, 770, 10, true, name)
 	d.Text(40, 756, 9, false, addr)
 	d.Text(40, 744, 9, false, phone)
-	d.Text(360, 790, 9, false, "Order: "+fmt.Sprint(o["order_number"]))
-	d.Text(360, 776, 9, false, "Date: "+formatTime(o["created_at"], a.Loc))
-	d.Text(360, 762, 9, false, "Status: "+strings.ReplaceAll(fmt.Sprint(o["status"]), "_", " "))
-	d.Text(40, 712, 9, true, "Bill to:")
+	d.Text(360, 790, 9, false, tr("Order")+": "+fmt.Sprint(o["order_number"]))
+	d.Text(360, 776, 9, false, tr("Date")+": "+formatTime(o["created_at"], a.Loc))
+	d.Text(360, 762, 9, false, tr("Status")+": "+tr(fmt.Sprint(o["status"])))
+	d.Text(40, 712, 9, true, tr("Bill to")+":")
 	d.Text(40, 698, 9, false, fmt.Sprint(o["customer_name"]))
 	d.Text(40, 686, 9, false, strOr(o["customer_phone"], ""))
 	d.Text(40, 674, 9, false, export.Fit(strOr(o["shipping_address"], ""), 300, 9))
 	y := 640.0
 	d.Rect(40, y-4, 515, 16, 0.92)
-	d.Text(46, y, 9, true, "Item")
-	d.Text(330, y, 9, true, "Qty")
-	d.Text(390, y, 9, true, "Price")
-	d.TextRight(549, y, 9, true, "Subtotal")
+	d.Text(46, y, 9, true, tr("Item"))
+	d.Text(330, y, 9, true, tr("Qty"))
+	d.Text(390, y, 9, true, tr("Price"))
+	d.TextRight(549, y, 9, true, tr("Subtotal"))
 	y -= 20
 	items, _ := o["items"].([]map[string]any)
 	for _, it := range items {
@@ -259,7 +261,7 @@ func (a *API) orderInvoice(c fiber.Ctx) error {
 	d.Line(330, y, 555)
 	for _, r := range [][2]string{{"Subtotal", "subtotal"}, {"Shipping", "shipping_fee"}, {"Total", "grand_total"}} {
 		y -= 16
-		d.Text(390, y, 9.5, r[0] == "Total", r[0])
+		d.Text(390, y, 9.5, r[0] == "Total", tr(r[0]))
 		d.TextRight(549, y, 9.5, r[0] == "Total", export.Thousands(num(o[r[1]])))
 	}
 	return export.Send(c, "order-"+strings.ReplaceAll(fmt.Sprint(o["order_number"]), "/", "-")+".pdf", "application/pdf", d.Bytes())

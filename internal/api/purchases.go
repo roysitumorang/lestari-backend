@@ -12,6 +12,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 func (a *API) purchaseResource() *crud.Resource {
@@ -89,12 +90,12 @@ func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principa
 		cost, _ := httpx.Num(it, "unit_cost")
 		disc, _ := httpx.Num(it, "discount_amount")
 		if !ok || !qok || qty <= 0 || cost < 0 {
-			v.Add("items", fmt.Sprintf("Row %d needs a product, a quantity above 0 and a unit cost.", i+1))
+			v.Add("items", "Row {row} needs a product, a quantity above 0 and a unit cost.", "row", i+1)
 			continue
 		}
 		var name string
 		if err := tx.QueryRow(ctx, `SELECT name FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL`, pid, p.BranchID).Scan(&name); err != nil {
-			v.Add("items", fmt.Sprintf("Row %d: product not found.", i+1))
+			v.Add("items", "Row {row}: product not found.", "row", i+1)
 			continue
 		}
 		sub := round2(qty*cost - disc)
@@ -262,11 +263,11 @@ func (a *API) purchaseReturn(c fiber.Ctx) error {
 			var bought, cost, returned float64
 			err := tx.QueryRow(ctx, `SELECT product_name, sum(quantity), round(sum(subtotal)/NULLIF(sum(quantity),0), 2) FROM purchase_items WHERE purchase_id=$1 AND product_id=$2 GROUP BY product_name`, id, pid).Scan(&name, &bought, &cost)
 			if err != nil || qty <= 0 {
-				return httpx.Invalid("items", fmt.Sprintf("Row %d: the product is not on this purchase or the quantity is invalid.", i+1))
+				return httpx.Invalid("items", "Row {row}: the product is not on this purchase or the quantity is invalid.", "row", i+1)
 			}
 			_ = tx.QueryRow(ctx, `SELECT COALESCE(sum(ri.quantity),0) FROM return_items ri JOIN returns r ON r.id = ri.return_id WHERE r.purchase_id=$1 AND ri.product_id=$2 AND r.id <> $3`, id, pid, returnID).Scan(&returned)
 			if qty > bought-returned {
-				return httpx.Invalid("items", fmt.Sprintf("Row %d: only %s can still be returned.", i+1, trimNum(bought-returned)))
+				return httpx.Invalid("items", "Row {row}: only {qty} can still be returned.", "row", i+1, "qty", trimNum(bought-returned))
 			}
 			sub := round2(qty * cost)
 			if _, err := tx.Exec(ctx, `INSERT INTO return_items (return_id, product_id, product_name, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6)`, returnID, pid, name, qty, cost, sub); err != nil {
@@ -400,10 +401,10 @@ func (a *API) payDebt(res *crud.Resource) fiber.Handler {
 			}
 			remaining := round2(total - paid)
 			if remaining <= 0 {
-				return httpx.Conflict("This " + kind + " is already paid.")
+				return httpx.Conflict("This {kind} is already paid.", "kind", i18n.Tr(res.Singular))
 			}
 			if amount > remaining+0.004 {
-				return httpx.Invalid("amount", "The amount is more than the remaining "+trimNum(remaining)+".")
+				return httpx.Invalid("amount", "The amount is more than the remaining {amount}.", "amount", trimNum(remaining))
 			}
 			pay, err := db.JSONRow(ctx, tx, `INSERT INTO debt_payments (debt_id, payment_date, amount, payment_method, note) VALUES ($1,$2::date,$3,$4,NULLIF($5,'')) RETURNING id, payment_date, amount, payment_method, note`,
 				id, date, amount, method, httpx.Str(body, "note"))
@@ -517,7 +518,7 @@ func (a *API) saleReturn(c fiber.Ctx) error {
 			var sold, price float64
 			if err := tx.QueryRow(ctx, `SELECT product_name, sum(quantity), round(sum(subtotal)/NULLIF(sum(quantity),0),2) FROM sale_items WHERE sale_id=$1 AND product_id=$2 GROUP BY product_name`, id, pid).
 				Scan(&name, &sold, &price); err != nil || qty <= 0 || qty > sold {
-				return httpx.Invalid("items", fmt.Sprintf("Row %d: the product is not on this sale or the quantity is invalid.", i+1))
+				return httpx.Invalid("items", "Row {row}: the product is not on this sale or the quantity is invalid.", "row", i+1)
 			}
 			sub := round2(qty * price)
 			if _, err := tx.Exec(ctx, `INSERT INTO return_items (return_id, product_id, product_name, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6)`, returnID, pid, name, qty, price, sub); err != nil {

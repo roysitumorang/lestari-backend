@@ -15,6 +15,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 // startJob records a background job and runs fn in a goroutine. It returns the job id.
@@ -64,8 +65,8 @@ func (a *API) registerInventory() {
 	stock := a.stockResource()
 	a.CRUD.Register(a.addH, "/inventory/stocks", stock, "list", "export")
 	a.addH("GET", "/inventory/stocks/import-template", func(c fiber.Ctx) error {
-		b, err := export.XLSX("Stock", []export.Column{{Key: "sku", Label: "sku*"}, {Key: "stock", Label: "stock*"}, {Key: "unit_cost", Label: "unit_cost"}, {Key: "note", Label: "note"}},
-			[]map[string]any{{"sku": "P000001", "stock": 10.0, "unit_cost": 5000.0, "note": "Initial count"}})
+		b, err := export.XLSX(httpx.Lang(c), "Stock", []export.Column{{Key: "sku", Label: "sku*"}, {Key: "stock", Label: "stock*"}, {Key: "unit_cost", Label: "unit_cost"}, {Key: "note", Label: "note"}},
+			[]map[string]any{{"sku": "P000001", "stock": 10.0, "unit_cost": 5000.0, "note": httpx.T(c, "Initial count")}})
 		if err != nil {
 			return err
 		}
@@ -288,13 +289,13 @@ func (a *API) saveOpnameItems(ctx context.Context, tx pgx.Tx, branchID, opnameID
 			continue // empty row
 		}
 		if !ok || !qok || qty < 0 {
-			v.Add("items", fmt.Sprintf("Row %d needs a product and a counted quantity of 0 or more.", i+1))
+			v.Add("items", "Row {row} needs a product and a counted quantity of 0 or more.", "row", i+1)
 			continue
 		}
 		var name string
 		var stock, cost float64
 		if err := tx.QueryRow(ctx, `SELECT name, stock, purchase_price FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL`, pid, branchID).Scan(&name, &stock, &cost); err != nil {
-			v.Add("items", fmt.Sprintf("Row %d: product not found.", i+1))
+			v.Add("items", "Row {row}: product not found.", "row", i+1)
 			continue
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO stock_opname_items (opname_id, product_id, product_name, system_stock, physical_stock, unit_cost, note) VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''))`,
@@ -324,7 +325,7 @@ func (a *API) registerOpnames() {
 				return httpx.NotFound("Stock opname")
 			}
 			if status != "pending" {
-				return httpx.Conflict("This stock opname was already " + status + ".")
+				return httpx.Conflict("This stock opname was already {status}.", "status", i18n.Tr(status))
 			}
 			rows, err := tx.Query(c.Context(), `SELECT i.product_id, i.physical_stock, p.stock FROM stock_opname_items i JOIN products p ON p.id = i.product_id WHERE i.opname_id=$1`, id)
 			if err != nil {
@@ -401,7 +402,7 @@ func (a *API) registerOpnames() {
 		return export.Write(c, "stock-opname-"+strings.ReplaceAll(fmt.Sprint(row["code"]), "/", "-"), "Stock opname "+fmt.Sprint(row["code"]), cols, items)
 	})
 	a.addH("GET", "/stock-opnames/import-template", func(c fiber.Ctx) error {
-		b, err := export.XLSX("Stock opname", []export.Column{{Key: "sku", Label: "sku*"}, {Key: "physical_stock", Label: "physical_stock*"}, {Key: "note", Label: "note"}},
+		b, err := export.XLSX(httpx.Lang(c), "Stock opname", []export.Column{{Key: "sku", Label: "sku*"}, {Key: "physical_stock", Label: "physical_stock*"}, {Key: "note", Label: "note"}},
 			[]map[string]any{{"sku": "P000001", "physical_stock": 12.0}})
 		if err != nil {
 			return err
@@ -428,7 +429,7 @@ func (a *API) registerOpnames() {
 		}
 		if len(items) > 0 {
 			by := c.FormValue("performed_by_name", p.Name)
-			body := map[string]any{"opname_date": a.today(), "performed_by_name": by, "performed_by_role": p.Role, "note": "Imported from " + c.FormValue("filename", "spreadsheet"), "items": items}
+			body := map[string]any{"opname_date": a.today(), "performed_by_name": by, "performed_by_role": p.Role, "note": httpx.T(c, "Imported from {file}", "file", c.FormValue("filename", httpx.T(c, "spreadsheet"))), "items": items}
 			if _, err := a.CRUD.Save(c, a.opnameResource(), body, ""); err != nil {
 				return err
 			}

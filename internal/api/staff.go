@@ -149,7 +149,7 @@ func (a *API) registerStaff() {
 		}
 		for _, x := range in.Permissions {
 			if !contains(permissionList, x) {
-				return httpx.Invalid("permissions", "Unknown permission "+x+".")
+				return httpx.Invalid("permissions", "Unknown permission {permission}.", "permission", x)
 			}
 		}
 		if in.Permissions == nil {
@@ -162,7 +162,7 @@ func (a *API) registerStaff() {
 		if tag.RowsAffected() == 0 {
 			return httpx.NotFound("Staff member")
 		}
-		a.activity(c, "permissions_changed", "Changed access rights of staff "+id)
+		a.activity(c, "permissions_changed", "Changed access rights of staff {id}", "id", id)
 		return httpx.OK(c, fiber.Map{"permissions": in.Permissions})
 	})
 	a.addH("POST", "/staff/:id/resend-invitation", func(c fiber.Ctx) error {
@@ -177,7 +177,7 @@ func (a *API) registerStaff() {
 		if status != "invited" {
 			return httpx.Conflict("This staff member has already signed in.")
 		}
-		if err := a.Sender.Send(c.Context(), "email", email, "Hi "+name+", you have been invited to Lestari. Sign in with this email address and the password your manager gave you."); err != nil {
+		if err := a.Sender.Send(c.Context(), "email", email, httpx.T(c, "Hi {name}, you have been invited to Lestari. Sign in with this email address and the password your manager gave you.", "name", name)); err != nil {
 			return err
 		}
 		return httpx.OK(c, fiber.Map{"sent": true})

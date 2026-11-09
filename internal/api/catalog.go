@@ -127,7 +127,7 @@ func (a *API) registerCatalog() {
 		if err != nil {
 			return err
 		}
-		row["name"] = fmt.Sprint(row["name"]) + " (copy)"
+		row["name"] = httpx.T(c, "{name} (copy)", "name", fmt.Sprint(row["name"]))
 		row["sku"] = nil
 		row["barcode"] = nil
 		row["stock"] = 0.0
@@ -144,7 +144,7 @@ func (a *API) registerCatalog() {
 			return err
 		}
 		cols := []export.Column{{Key: "name", Label: "Name"}, {Key: "sku", Label: "SKU"}, {Key: "barcode", Label: "Barcode"}, {Key: "selling_price", Label: "Price", Format: "money"}, {Key: "unit", Label: "Unit"}, {Key: "category_name", Label: "Category"}}
-		b, err := export.XLSX("Labels", cols, rows)
+		b, err := export.XLSX(httpx.Lang(c), "Labels", cols, rows)
 		if err != nil {
 			return err
 		}
@@ -198,6 +198,7 @@ func (a *API) productBarcodes(c fiber.Ctx) error {
 		w, h, cellW, cellH = 141.7, 70.9, 141.7, 70.9
 	}
 	d := export.NewPDF(w, h)
+	tr := httpx.Lang(c).T
 	margin := 18.0
 	if w < 200 {
 		margin = 0
@@ -232,7 +233,7 @@ func (a *API) productBarcodes(c fiber.Ctx) error {
 		}
 	}
 	if i == 0 {
-		d.Text(40, h-60, 12, false, "No products selected.")
+		d.Text(40, h-60, 12, false, tr("No products selected."))
 	}
 	return export.Send(c, "barcodes.pdf", "application/pdf", d.Bytes())
 }
@@ -245,7 +246,7 @@ func productStock(ctx context.Context, tx pgx.Tx, branchID, productID string, ch
 		productID, branchID, change).Scan(&after, &track)
 	if err != nil {
 		if db.IsNoRows(err) {
-			return 0, httpx.Invalid("product_id", fmt.Sprintf("Product %s not found.", productID))
+			return 0, httpx.Invalid("product_id", "Product {id} not found.", "id", productID)
 		}
 		return 0, err
 	}

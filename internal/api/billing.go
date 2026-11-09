@@ -16,6 +16,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 var payChannels = []string{"virtual_account", "qris", "e_wallet", "credit_card", "convenience_store", "manual_transfer"}
@@ -122,7 +123,7 @@ func (a *API) createInvoice(c fiber.Ctx, kind, desc, method string, amount float
 			} else if method != "manual_transfer" {
 				fee = 4000
 			}
-			url, instructions, err := a.Payments.Create(ctx, number, amount+fee, method)
+			url, instructions, err := a.Payments.Create(ctx, number, amount+fee, method, httpx.Lang(c))
 			if err != nil {
 				return err
 			}
@@ -199,7 +200,7 @@ func (a *API) markInvoicePaid(ctx context.Context, number string) (bool, error) 
 		if err := a.applyInvoice(ctx, tx, id); err != nil {
 			return err
 		}
-		a.notify(ctx, tx, storeID, nil, "back_office", "Payment received", desc+" has been paid.", "billing")
+		a.notify(ctx, tx, storeID, nil, "back_office", "Payment received", "{item} has been paid.", "billing", "item", desc)
 		return nil
 	})
 	return paid, err
@@ -324,7 +325,7 @@ func (a *API) subscribe(c fiber.Ctx) error {
 	if err := v.Err(); err != nil {
 		return err
 	}
-	inv, err := a.createInvoice(c, "subscription", fmt.Sprintf("Pro plan, %d month(s)", pl.Months), in.PaymentMethod, pl.Price, in.PromoCode, map[string]any{"plan": pl.Code, "months": pl.Months})
+	inv, err := a.createInvoice(c, "subscription", httpx.T(c, "Pro plan, {n} month(s)", "n", pl.Months), in.PaymentMethod, pl.Price, in.PromoCode, map[string]any{"plan": pl.Code, "months": pl.Months})
 	if err != nil {
 		return err
 	}
@@ -350,7 +351,7 @@ func (a *API) coinTopUp(c fiber.Ctx) error {
 	if err := v.Err(); err != nil {
 		return err
 	}
-	inv, err := a.createInvoice(c, "coin_topup", "Premium coin top-up", in.PaymentMethod, in.Amount, in.PromoCode, map[string]any{})
+	inv, err := a.createInvoice(c, "coin_topup", httpx.T(c, "Premium coin top-up"), in.PaymentMethod, in.Amount, in.PromoCode, map[string]any{})
 	if err != nil {
 		return err
 	}
@@ -433,7 +434,7 @@ func (a *API) invoiceProof(c fiber.Ctx) error {
 	if _, err := a.DB.Exec(c.Context(), `UPDATE invoices SET payment_proof_url=$2, sender_account_name=NULLIF($3,''), updated_at=now() WHERE id=$1`, id, up["url"], c.FormValue("sender_account_name")); err != nil {
 		return err
 	}
-	a.notify(c.Context(), a.DB, httpx.P(c).StoreID, nil, "back_office", "Payment proof received", "We are checking your transfer for "+fmt.Sprint(inv["invoice_number"])+".", "billing")
+	a.notify(c.Context(), a.DB, httpx.P(c).StoreID, nil, "back_office", "Payment proof received", "We are checking your transfer for {number}.", "billing", "number", fmt.Sprint(inv["invoice_number"]))
 	inv, err = a.invoice(c, id)
 	if err != nil {
 		return err
@@ -472,31 +473,32 @@ func (a *API) invoicePDF(c fiber.Ctx) error {
 	var storeName string
 	_ = a.DB.QueryRow(c.Context(), `SELECT name FROM stores WHERE id=$1`, httpx.P(c).StoreID).Scan(&storeName)
 	d := export.NewPDF(595, 842)
+	tr := httpx.Lang(c).T
 	d.Page()
-	d.Text(40, 790, 20, true, "INVOICE")
+	d.Text(40, 790, 20, true, tr("INVOICE"))
 	d.Text(40, 766, 10, false, fmt.Sprint(inv["invoice_number"]))
 	d.Text(360, 790, 10, true, "Lestari")
-	d.Text(360, 776, 9, false, "Billed to: "+storeName)
-	d.Text(360, 762, 9, false, "Date: "+formatTime(inv["created_at"], a.Loc))
-	d.Text(360, 748, 9, false, "Status: "+strings.ToUpper(fmt.Sprint(inv["status"])))
+	d.Text(360, 776, 9, false, tr("Billed to")+": "+storeName)
+	d.Text(360, 762, 9, false, tr("Date")+": "+formatTime(inv["created_at"], a.Loc))
+	d.Text(360, 748, 9, false, tr("Status")+": "+strings.ToUpper(tr(fmt.Sprint(inv["status"]))))
 	y := 700.0
 	d.Rect(40, y-4, 515, 16, 0.92)
-	d.Text(46, y, 9, true, "Description")
-	d.TextRight(549, y, 9, true, "Amount (Rp)")
+	d.Text(46, y, 9, true, tr("Description"))
+	d.TextRight(549, y, 9, true, tr("Amount (Rp)"))
 	y -= 22
 	d.Text(46, y, 10, false, fmt.Sprint(inv["description"]))
 	d.TextRight(549, y, 10, false, export.Thousands(num(inv["amount"])))
 	if fee := num(inv["admin_fee"]); fee > 0 {
 		y -= 16
-		d.Text(46, y, 10, false, "Admin fee")
+		d.Text(46, y, 10, false, tr("Admin fee"))
 		d.TextRight(549, y, 10, false, export.Thousands(fee))
 	}
 	y -= 12
 	d.Line(40, y, 555)
 	y -= 18
-	d.Text(380, y, 11, true, "Total")
+	d.Text(380, y, 11, true, tr("Total"))
 	d.TextRight(549, y, 11, true, export.Thousands(num(inv["amount"])+num(inv["admin_fee"])))
-	d.Text(40, 120, 8, false, "Paid with "+strings.ReplaceAll(fmt.Sprint(inv["payment_method"]), "_", " ")+" on "+formatTime(inv["paid_at"], a.Loc)+".")
+	d.Text(40, 120, 8, false, tr("Paid with {method} on {date}.", "method", i18n.Tr(fmt.Sprint(inv["payment_method"])), "date", formatTime(inv["paid_at"], a.Loc)))
 	return export.Send(c, "invoice-"+strings.ReplaceAll(fmt.Sprint(inv["invoice_number"]), "/", "-")+".pdf", "application/pdf", d.Bytes())
 }
 
@@ -538,7 +540,11 @@ func (a *API) listPlugins(c fiber.Ctx) error {
 				}
 			}
 		}
-		out = append(out, fiber.Map{"code": pl.Code, "name": pl.Name, "description": pl.Description, "features": pl.Features,
+		features := make([]string, len(pl.Features))
+		for i, f := range pl.Features {
+			features[i] = httpx.T(c, f)
+		}
+		out = append(out, fiber.Map{"code": pl.Code, "name": httpx.T(c, pl.Name), "description": httpx.T(c, pl.Description), "features": features,
 			"price_monthly": pl.Monthly, "price_yearly": pl.Monthly * 10, "status": status, "trial_available": !ok || !s.trialUsed, "expires_at": expires})
 	}
 	return httpx.OK(c, out)
@@ -571,7 +577,7 @@ func (a *API) subscribePlugin(c fiber.Ctx) error {
 	if months == 12 {
 		price = pl.Monthly * 10
 	}
-	inv, err := a.createInvoice(c, "plugin", fmt.Sprintf("%s plugin, %d month(s)", pl.Name, months), in.PaymentMethod, price, "", map[string]any{"code": pl.Code, "months": months})
+	inv, err := a.createInvoice(c, "plugin", httpx.T(c, "{plugin} plugin, {n} month(s)", "plugin", i18n.Tr(pl.Name), "n", months), in.PaymentMethod, price, "", map[string]any{"code": pl.Code, "months": months})
 	if err != nil {
 		return err
 	}

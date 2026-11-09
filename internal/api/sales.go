@@ -17,6 +17,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 func dateFrom(col string) crud.Filter {
@@ -143,7 +144,7 @@ func (a *API) loadProduct(ctx context.Context, tx pgx.Tx, branchID, id string) (
 		FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL FOR UPDATE`, id, branchID).
 		Scan(&p.ID, &p.Name, &p.CategoryID, &p.Price, &p.Cost, &p.PriceType, &p.DiscType, &p.DiscValue, &ws, &tp, &ing, &va, &p.Track, &p.Stock, &pe, &pr)
 	if err != nil {
-		return nil, httpx.Invalid("items", fmt.Sprintf("Product %s not found.", id))
+		return nil, httpx.Invalid("items", "Product {id} not found.", "id", id)
 	}
 	_ = json.Unmarshal(ws, &p.Wholesale)
 	_ = json.Unmarshal(tp, &p.TypePrices)
@@ -227,7 +228,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 	}
 	for i, it := range in.Items {
 		if it.Quantity <= 0 {
-			v.Add("items", fmt.Sprintf("Row %d: quantity must be more than 0.", i+1))
+			v.Add("items", "Row {row}: quantity must be more than 0.", "row", i+1)
 		}
 	}
 	createdAt := a.now()
@@ -283,7 +284,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 			}
 			wanted[prod.ID] += it.Quantity
 			if prod.Track && len(prod.Ingredients) == 0 && !allowNegative && wanted[prod.ID] > prod.Stock {
-				return httpx.Invalid("items", fmt.Sprintf("Only %s of %s left in stock.", trimNum(prod.Stock), prod.Name))
+				return httpx.Invalid("items", "Only {qty} of {product} left in stock.", "qty", trimNum(prod.Stock), "product", prod.Name)
 			}
 			price, cost := prod.priceFor(it.Quantity, it.VariantName, custTypeID)
 			if it.UnitPrice != nil {
@@ -352,7 +353,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 				return err
 			}
 			if bal < redeemed {
-				return httpx.Invalid("points_redeemed", fmt.Sprintf("The customer has only %d points.", bal))
+				return httpx.Invalid("points_redeemed", "The customer has only {n} points.", "n", bal)
 			}
 			if in.PointsRedeemed > 0 {
 				invoiceDisc += float64(in.PointsRedeemed) * num(pointsSet["redeem_point_value"])
@@ -813,6 +814,7 @@ func (a *API) saleReceipt(c fiber.Ctx) error {
 	items, _ := s["items"].([]map[string]any)
 	h := 260.0 + float64(len(items))*24
 	d := export.NewPDF(226, h)
+	tr := httpx.Lang(c).T
 	d.Page()
 	y := h - 24
 	center := func(size float64, bold bool, t string) {
@@ -832,13 +834,13 @@ func (a *API) saleReceipt(c fiber.Ctx) error {
 	y -= 4
 	d.Line(8, y+6, 218)
 	if rs["show_receipt_number"] != false {
-		d.Text(8, y-4, 7, false, "No: "+fmt.Sprint(s["receipt_number"]))
+		d.Text(8, y-4, 7, false, tr("No")+": "+fmt.Sprint(s["receipt_number"]))
 		y -= 10
 	}
 	d.Text(8, y-4, 7, false, formatTime(s["created_at"], a.Loc)+"  ·  "+fmt.Sprint(s["cashier_name"]))
 	y -= 12
 	if cu, ok := s["customer"].(map[string]any); ok {
-		d.Text(8, y-4, 7, false, "Customer: "+fmt.Sprint(cu["name"]))
+		d.Text(8, y-4, 7, false, tr("Customer")+": "+fmt.Sprint(cu["name"]))
 		y -= 10
 	}
 	d.Line(8, y, 218)
@@ -864,28 +866,28 @@ func (a *API) saleReceipt(c fiber.Ctx) error {
 		y -= 11
 	}
 	if rs["show_total_quantity"] == true {
-		d.Text(8, y, 7.5, false, "Total qty: "+export.Thousands(totalQty))
+		d.Text(8, y, 7.5, false, tr("Total qty")+": "+export.Thousands(totalQty))
 		y -= 11
 	}
-	row("Subtotal", num(s["subtotal"]), false)
-	row("Discount", -num(s["discount_total"]), false)
-	row("Service charge", num(s["service_charge"]), false)
-	row(strOr(s["tax_name"], "Tax"), num(s["tax_total"]), false)
-	row("Fees", num(s["fee_total"]), false)
-	row("Rounding", num(s["rounding"]), false)
-	row("TOTAL", num(s["grand_total"]), true)
-	row("Paid ("+fmt.Sprint(s["payment_method"])+")", num(s["paid_amount"])+num(s["change_amount"]), false)
-	row("Change", num(s["change_amount"]), false)
+	row(tr("Subtotal"), num(s["subtotal"]), false)
+	row(tr("Discount"), -num(s["discount_total"]), false)
+	row(tr("Service charge"), num(s["service_charge"]), false)
+	row(strOr(s["tax_name"], tr("Tax")), num(s["tax_total"]), false)
+	row(tr("Fees"), num(s["fee_total"]), false)
+	row(tr("Rounding"), num(s["rounding"]), false)
+	row(tr("TOTAL"), num(s["grand_total"]), true)
+	row(tr("Paid ({method})", "method", i18n.Tr(fmt.Sprint(s["payment_method"]))), num(s["paid_amount"])+num(s["change_amount"]), false)
+	row(tr("Change"), num(s["change_amount"]), false)
 	if rs["show_points"] == true && num(s["points_earned"]) > 0 {
-		d.Text(8, y, 7, false, "Points earned: "+export.Thousands(num(s["points_earned"])))
+		d.Text(8, y, 7, false, tr("Points earned")+": "+export.Thousands(num(s["points_earned"])))
 		y -= 10
 	}
 	y -= 6
-	center(7, false, strOr(rs["footer_note"], "Thank you!"))
+	center(7, false, strOr(rs["footer_note"], tr("Thank you!")))
 	if rs["show_signature"] == true {
 		y -= 26
 		d.Line(130, y, 218)
-		d.Text(150, y-9, 7, false, "Signature")
+		d.Text(150, y-9, 7, false, tr("Signature"))
 	}
 	return export.Send(c, "receipt-"+strings.ReplaceAll(fmt.Sprint(s["receipt_number"]), "/", "-")+".pdf", "application/pdf", d.Bytes())
 }
@@ -915,14 +917,15 @@ func (a *API) saleDeliveryNote(c fiber.Ctx) error {
 		cust, _ = db.JSONRow(c.Context(), a.DB, `SELECT name, phone, address FROM customers WHERE id=$1`, cu["id"])
 	}
 	d := export.NewPDF(595, 842)
+	tr := httpx.Lang(c).T
 	d.Page()
-	d.Text(40, 790, 16, true, "DELIVERY NOTE")
+	d.Text(40, 790, 16, true, tr("DELIVERY NOTE"))
 	d.Text(40, 770, 10, true, name)
 	d.Text(40, 756, 9, false, addr)
 	d.Text(40, 744, 9, false, phone)
-	d.Text(360, 790, 9, false, "No: "+fmt.Sprint(s["receipt_number"]))
-	d.Text(360, 776, 9, false, "Date: "+formatTime(s["created_at"], a.Loc))
-	d.Text(40, 712, 9, true, "Deliver to:")
+	d.Text(360, 790, 9, false, tr("No")+": "+fmt.Sprint(s["receipt_number"]))
+	d.Text(360, 776, 9, false, tr("Date")+": "+formatTime(s["created_at"], a.Loc))
+	d.Text(40, 712, 9, true, tr("Deliver to")+":")
 	if cust != nil {
 		d.Text(40, 698, 9, false, strOr(cust["name"], "-"))
 		d.Text(40, 686, 9, false, strOr(cust["address"], ""))
@@ -931,9 +934,9 @@ func (a *API) saleDeliveryNote(c fiber.Ctx) error {
 	y := 640.0
 	d.Rect(40, y-4, 515, 16, 0.92)
 	d.Text(46, y, 9, true, "#")
-	d.Text(70, y, 9, true, "Item")
-	d.Text(420, y, 9, true, "Qty")
-	d.Text(470, y, 9, true, "Checked")
+	d.Text(70, y, 9, true, tr("Item"))
+	d.Text(420, y, 9, true, tr("Qty"))
+	d.Text(470, y, 9, true, tr("Checked"))
 	y -= 20
 	items, _ := s["items"].([]map[string]any)
 	for i, it := range items {
@@ -948,7 +951,7 @@ func (a *API) saleDeliveryNote(c fiber.Ctx) error {
 		y -= 16
 	}
 	y -= 40
-	for i, label := range []string{"Sender", "Courier", "Receiver"} {
+	for i, label := range []string{tr("Sender"), tr("Courier"), tr("Receiver")} {
 		x := 40 + float64(i)*180
 		d.Line(x, y, x+140)
 		d.Text(x, y-12, 9, false, label)

@@ -23,6 +23,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 type Service struct {
@@ -161,6 +162,13 @@ func (s *Service) Middleware() fiber.Handler {
 			}
 		}
 		httpx.SetPrincipal(c, p)
+		if !httpx.LangExplicit(c) {
+			// no Accept-Language: answer in the language chosen in the branch's display settings
+			var lang *string
+			if err := s.DB.QueryRow(c.Context(), `SELECT value->>'language' FROM settings WHERE branch_id=$1 AND key='display'`, p.BranchID).Scan(&lang); err == nil && lang != nil && i18n.Supported(*lang) {
+				httpx.SetLang(c, i18n.Lang(*lang), false)
+			}
+		}
 		return c.Next()
 	}
 }
@@ -169,7 +177,7 @@ func (s *Service) Middleware() fiber.Handler {
 func RequirePlugin(code string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if !httpx.P(c).HasPlugin(code) {
-			return httpx.PaymentRequired("plugin_required", "This feature needs the "+code+" plugin.")
+			return httpx.PaymentRequired("plugin_required", "This feature needs the {plugin} plugin.", "plugin", code)
 		}
 		return c.Next()
 	}

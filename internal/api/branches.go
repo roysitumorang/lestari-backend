@@ -13,6 +13,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 const branchRenewalMonthly = 99000.0
@@ -184,7 +185,7 @@ func (a *API) copyProducts(c fiber.Ctx) error {
 			return err
 		})
 		if err == nil {
-			a.notify(ctx, a.DB, p.StoreID, &target, "back_office", "Products copied", fmt.Sprintf("%d products were copied from the head office.", copied), "branch-products")
+			a.notify(ctx, a.DB, p.StoreID, &target, "back_office", "Products copied", "{n} products were copied from the head office.", "branch-products", "n", copied)
 		}
 		return map[string]any{"copied": copied}, err
 	})
@@ -278,7 +279,7 @@ func (a *API) branchRenewal(c fiber.Ctx) error {
 	if months == 12 {
 		amount *= 0.85 // yearly discount
 	}
-	inv, err := a.createInvoice(c, "branch_renewal", fmt.Sprintf("Renewal of %d branch(es) for %d month(s)", n, months), in.PaymentMethod, amount, in.PromoCode,
+	inv, err := a.createInvoice(c, "branch_renewal", httpx.T(c, "Renewal of {n} branch(es) for {months} month(s)", "n", n, "months", months), in.PaymentMethod, amount, in.PromoCode,
 		map[string]any{"branch_ids": in.BranchIDs, "months": months})
 	if err != nil {
 		return err
@@ -443,17 +444,17 @@ func (a *API) saveTransferItems(ctx context.Context, tx pgx.Tx, p *httpx.Princip
 			continue
 		}
 		if !ok || !qok || qty <= 0 {
-			v.Add("items", fmt.Sprintf("Row %d needs a product and a quantity above 0.", i+1))
+			v.Add("items", "Row {row} needs a product and a quantity above 0.", "row", i+1)
 			continue
 		}
 		var name, sku string
 		var stock float64
 		if err := tx.QueryRow(ctx, `SELECT name, sku, stock FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL FOR UPDATE`, pid, p.BranchID).Scan(&name, &sku, &stock); err != nil {
-			v.Add("items", fmt.Sprintf("Row %d: product not found in this branch.", i+1))
+			v.Add("items", "Row {row}: product not found in this branch.", "row", i+1)
 			continue
 		}
 		if stock < qty {
-			v.Add("items", fmt.Sprintf("Row %d: only %s of %s in stock.", i+1, trimNum(stock), name))
+			v.Add("items", "Row {row}: only {qty} of {product} in stock.", "row", i+1, "qty", trimNum(stock), "product", name)
 			continue
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO stock_transfer_items (transfer_id, product_id, product_name, sku, quantity, received_quantity, note) VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''))`,
@@ -477,7 +478,7 @@ func (a *API) saveTransferItems(ctx context.Context, tx pgx.Tx, p *httpx.Princip
 		return err
 	}
 	if confirm {
-		a.notify(ctx, tx, p.StoreID, &to, "back_office", "Incoming stock transfer", "Transfer "+number+" is waiting for your confirmation.", "report-transfer-confirmations")
+		a.notify(ctx, tx, p.StoreID, &to, "back_office", "Incoming stock transfer", "Transfer {number} is waiting for your confirmation.", "report-transfer-confirmations", "number", number)
 	}
 	return nil
 }
@@ -537,7 +538,7 @@ func (a *API) acceptTransfer(c fiber.Ctx) error {
 			return httpx.Forbidden("Only the receiving branch can accept this transfer.")
 		}
 		if status != "pending" {
-			return httpx.Conflict("This transfer was already " + status + ".")
+			return httpx.Conflict("This transfer was already {status}.", "status", i18n.Tr(status))
 		}
 		lines, err := transferLines(ctx, tx, id)
 		if err != nil {
@@ -547,7 +548,7 @@ func (a *API) acceptTransfer(c fiber.Ctx) error {
 			q := l.qty
 			if r, ok := received[l.pid]; ok {
 				if r < 0 || r > l.qty {
-					return httpx.Invalid("items", "Received quantity for "+l.name+" must be between 0 and "+trimNum(l.qty)+".")
+					return httpx.Invalid("items", "Received quantity for {product} must be between 0 and {qty}.", "product", l.name, "qty", trimNum(l.qty))
 				}
 				q = r
 			}
@@ -568,7 +569,7 @@ func (a *API) acceptTransfer(c fiber.Ctx) error {
 		}
 		_, err = tx.Exec(ctx, `UPDATE stock_transfers SET status='accepted', note = COALESCE(NULLIF($2,''), note), updated_at=now() WHERE id=$1`, id, httpx.Str(body, "note"))
 		if err == nil {
-			a.notify(ctx, tx, p.StoreID, &from, "back_office", "Transfer accepted", "Transfer "+number+" was received.", "report-transfers")
+			a.notify(ctx, tx, p.StoreID, &from, "back_office", "Transfer accepted", "Transfer {number} was received.", "report-transfers", "number", number)
 		}
 		return err
 	})
@@ -607,7 +608,7 @@ func (a *API) rejectTransfer(c fiber.Ctx) error {
 			return httpx.Forbidden("Only the receiving branch can reject this transfer.")
 		}
 		if status != "pending" {
-			return httpx.Conflict("This transfer was already " + status + ".")
+			return httpx.Conflict("This transfer was already {status}.", "status", i18n.Tr(status))
 		}
 		lines, err := transferLines(ctx, tx, id)
 		if err != nil {
@@ -623,7 +624,7 @@ func (a *API) rejectTransfer(c fiber.Ctx) error {
 		if _, err := tx.Exec(ctx, `UPDATE stock_transfers SET status='rejected', reject_reason=$2, updated_at=now() WHERE id=$1`, id, reason); err != nil {
 			return err
 		}
-		a.notify(ctx, tx, p.StoreID, &from, "back_office", "Transfer rejected", "Transfer "+number+" was rejected: "+reason, "report-transfers")
+		a.notify(ctx, tx, p.StoreID, &from, "back_office", "Transfer rejected", "Transfer {number} was rejected: {reason}", "report-transfers", "number", number, "reason", reason)
 		return nil
 	})
 	if err != nil {
@@ -646,18 +647,19 @@ func (a *API) printTransfer(c fiber.Ctx) error {
 		return err
 	}
 	d := export.NewPDF(595, 842)
+	tr := httpx.Lang(c).T
 	d.Page()
-	d.Text(40, 790, 16, true, "STOCK TRANSFER")
-	d.Text(40, 770, 10, false, "No: "+fmt.Sprint(t["transfer_number"]))
-	d.Text(40, 756, 10, false, "Date: "+fmt.Sprint(t["transfer_date"]))
-	d.Text(40, 742, 10, false, "From: "+fmt.Sprint(t["from_branch_name"])+"   To: "+fmt.Sprint(t["to_branch_name"]))
-	d.Text(40, 728, 10, false, "Status: "+fmt.Sprint(t["status"]))
+	d.Text(40, 790, 16, true, tr("STOCK TRANSFER"))
+	d.Text(40, 770, 10, false, tr("No")+": "+fmt.Sprint(t["transfer_number"]))
+	d.Text(40, 756, 10, false, tr("Date")+": "+fmt.Sprint(t["transfer_date"]))
+	d.Text(40, 742, 10, false, tr("From")+": "+fmt.Sprint(t["from_branch_name"])+"   "+tr("To")+": "+fmt.Sprint(t["to_branch_name"]))
+	d.Text(40, 728, 10, false, tr("Status")+": "+tr(fmt.Sprint(t["status"])))
 	y := 700.0
 	d.Rect(40, y-4, 515, 16, 0.92)
-	d.Text(46, y, 9, true, "Product")
+	d.Text(46, y, 9, true, tr("Product"))
 	d.Text(300, y, 9, true, "SKU")
-	d.Text(420, y, 9, true, "Qty")
-	d.Text(480, y, 9, true, "Received")
+	d.Text(420, y, 9, true, tr("Qty"))
+	d.Text(480, y, 9, true, tr("Received"))
 	y -= 20
 	items, _ := t["items"].([]map[string]any)
 	for _, it := range items {
@@ -674,12 +676,12 @@ func (a *API) printTransfer(c fiber.Ctx) error {
 		y -= 15
 	}
 	if note := strOr(t["note"], ""); note != "" {
-		d.Text(40, y-10, 9, false, "Note: "+export.Fit(note, 500, 9))
+		d.Text(40, y-10, 9, false, tr("Note")+": "+export.Fit(note, 500, 9))
 	}
 	y -= 70
 	d.Line(40, y, 200)
-	d.Text(40, y-12, 9, false, "Sent by")
+	d.Text(40, y-12, 9, false, tr("Sent by"))
 	d.Line(355, y, 515)
-	d.Text(355, y-12, 9, false, "Received by")
+	d.Text(355, y-12, 9, false, tr("Received by"))
 	return export.Send(c, "transfer-"+strings.ReplaceAll(fmt.Sprint(t["transfer_number"]), "/", "-")+".pdf", "application/pdf", d.Bytes())
 }

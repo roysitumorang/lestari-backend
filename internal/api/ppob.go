@@ -93,7 +93,7 @@ func (a *API) registerPPOB() {
 						var base float64
 						_ = h.Tx.QueryRow(ctx, `SELECT COALESCE(base_price,0) FROM ppob_prices WHERE id=$1`, id).Scan(&base)
 						if sp < base {
-							return httpx.Invalid("selling_price", "The selling price cannot be below the cost of "+trimNum(base)+".")
+							return httpx.Invalid("selling_price", "The selling price cannot be below the cost of {cost}.", "cost", trimNum(base))
 						}
 					}
 				}
@@ -174,7 +174,7 @@ func (a *API) createDeposit(c fiber.Ctx) error {
 		_, _ = a.DB.Exec(c.Context(), `UPDATE vouchers SET used_count = used_count + 1 WHERE upper(code)=upper($1)`, in.VoucherCode)
 	}
 	ref := "PPOB-" + a.now().Format("060102") + "-" + auth.RandomDigits(6)
-	url, instructions, err := a.Payments.Create(c.Context(), ref, in.Amount+fee, in.PaymentMethod)
+	url, instructions, err := a.Payments.Create(c.Context(), ref, in.Amount+fee, in.PaymentMethod, httpx.Lang(c))
 	if err != nil {
 		return err
 	}

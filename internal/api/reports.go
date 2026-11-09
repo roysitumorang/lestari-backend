@@ -557,6 +557,7 @@ func (a *API) shiftPDF(c fiber.Ctx) error {
 		return err
 	}
 	d := export.NewPDF(226, 420)
+	tr := httpx.Lang(c).T
 	d.Page()
 	y := 396.0
 	line := func(label string, v any, bold bool) {
@@ -573,21 +574,21 @@ func (a *API) shiftPDF(c fiber.Ctx) error {
 		d.TextRight(216, y, 8, bold, val)
 		y -= 13
 	}
-	d.Text(10, y, 11, true, "SHIFT REPORT")
+	d.Text(10, y, 11, true, tr("SHIFT REPORT"))
 	y -= 18
-	line("Cash drawer", s["cash_drawer_name"], false)
-	line("Cashier", s["cashier_name"], false)
-	line("Opened", formatTime(s["opened_at"], a.Loc), false)
-	line("Closed", formatTime(s["closed_at"], a.Loc), false)
+	line(tr("Cash drawer"), s["cash_drawer_name"], false)
+	line(tr("Cashier"), s["cashier_name"], false)
+	line(tr("Opened"), formatTime(s["opened_at"], a.Loc), false)
+	line(tr("Closed"), formatTime(s["closed_at"], a.Loc), false)
 	d.Line(10, y+6, 216)
 	y -= 4
-	line("Opening cash", s["opening_cash"], false)
-	line("Cash sales", s["cash_sales"], false)
-	line("Cash in", s["cash_in"], false)
-	line("Cash out", s["cash_out"], false)
-	line("Expected cash", s["expected_cash"], true)
-	line("Counted cash", s["actual_cash"], true)
-	line("Difference", s["difference"], true)
+	line(tr("Opening cash"), s["opening_cash"], false)
+	line(tr("Cash sales"), s["cash_sales"], false)
+	line(tr("Cash in"), s["cash_in"], false)
+	line(tr("Cash out"), s["cash_out"], false)
+	line(tr("Expected cash"), s["expected_cash"], true)
+	line(tr("Counted cash"), s["actual_cash"], true)
+	line(tr("Difference"), s["difference"], true)
 	d.Line(10, y+6, 216)
 	y -= 4
 	if pays, ok := s["payments"].([]any); ok {

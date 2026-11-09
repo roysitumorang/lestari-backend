@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/crud"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 // Sender delivers OTPs and messages. The default implementation only logs them;
@@ -36,13 +38,15 @@ func (s LogSender) Send(_ context.Context, channel, to, message string) error {
 // Payments creates payment links for invoices and top-ups. The default returns
 // manual-transfer instructions; plug in a gateway (e.g. NICEPay, Midtrans, Xendit) here.
 type Payments interface {
-	Create(ctx context.Context, reference string, amount float64, method string) (url string, instructions string, err error)
+	// instructions are written in lang.
+	Create(ctx context.Context, reference string, amount float64, method string, lang i18n.Lang) (url string, instructions string, err error)
 }
 
 type ManualPayments struct{}
 
-func (ManualPayments) Create(_ context.Context, ref string, amount float64, method string) (string, string, error) {
-	return "", fmt.Sprintf("Pay Rp %.0f via %s and include reference %s. The payment is confirmed once it is received.", amount, strings.ReplaceAll(method, "_", " "), ref), nil
+func (ManualPayments) Create(_ context.Context, ref string, amount float64, method string, lang i18n.Lang) (string, string, error) {
+	return "", lang.T("Pay Rp {amount} via {method} and include reference {reference}. The payment is confirmed once it is received.",
+		"amount", strconv.FormatFloat(amount, 'f', 0, 64), "method", i18n.Tr(method), "reference", ref), nil
 }
 
 type API struct {
@@ -181,19 +185,35 @@ func (a *API) nextNumber(ctx context.Context, q db.Querier, prefix, table, col, 
 }
 
 // activity writes an activity-log entry; failures are logged, never returned.
-func (a *API) activity(c fiber.Ctx, action, description string) {
+// The description is English text with optional {placeholder} name/value pairs; it is stored untranslated
+// with its params and shown in the reader's language (see localizeRows).
+func (a *API) activity(c fiber.Ctx, action, description string, args ...any) {
 	p := httpx.P(c)
-	if _, err := a.DB.Exec(context.Background(), `INSERT INTO activity_logs (store_id, user_id, action, description, ip_address, user_agent) VALUES ($1,$2,$3,$4,$5,$6)`,
-		p.StoreID, p.UserID, action, description, c.IP(), c.Get("User-Agent")); err != nil {
+	if _, err := a.DB.Exec(context.Background(), `INSERT INTO activity_logs (store_id, user_id, action, description, params, ip_address, user_agent) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		p.StoreID, p.UserID, action, description, i18n.Params(args...), c.IP(), c.Get("User-Agent")); err != nil {
 		a.Log.Warn("activity log", "err", err)
 	}
 }
 
-// notify stores an in-app notification for the store.
-func (a *API) notify(ctx context.Context, q db.Querier, storeID string, branchID *string, source, title, message, route string) {
-	if _, err := q.Exec(ctx, `INSERT INTO notifications (store_id, branch_id, source, title, message, link_route) VALUES ($1,$2,$3,$4,$5,NULLIF($6,''))`,
-		storeID, branchID, source, title, message, route); err != nil {
+// notify stores an in-app notification for the store. Title and message are English text with optional
+// {placeholder} name/value pairs (args); they are translated when the notification is read.
+func (a *API) notify(ctx context.Context, q db.Querier, storeID string, branchID *string, source, title, message, route string, args ...any) {
+	if _, err := q.Exec(ctx, `INSERT INTO notifications (store_id, branch_id, source, title, message, params, link_route) VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''))`,
+		storeID, branchID, source, title, message, i18n.Params(args...), route); err != nil {
 		a.Log.Warn("notification", "err", err)
+	}
+}
+
+// localize translates text columns of a stored row (notification, activity log) into the reader's language,
+// filling {placeholders} from the row's "params" column, which is removed from the output.
+func localize(l i18n.Lang, row map[string]any, keys ...string) {
+	params, _ := row["params"].(map[string]any)
+	delete(row, "params")
+	args := i18n.Restore(params)
+	for _, k := range keys {
+		if s, ok := row[k].(string); ok {
+			row[k] = l.T(s, args...)
+		}
 	}
 }
 
@@ -214,7 +234,7 @@ func storeInsert(p *httpx.Principal) map[string]any { return map[string]any{"sto
 // requirePlugin is used inside handlers that serve both plugin and non-plugin paths.
 func requirePlugin(c fiber.Ctx, code string) error {
 	if !httpx.P(c).HasPlugin(code) {
-		return httpx.PaymentRequired("plugin_required", "This feature needs the "+code+" plugin.")
+		return httpx.PaymentRequired("plugin_required", "This feature needs the {plugin} plugin.", "plugin", code)
 	}
 	return nil
 }

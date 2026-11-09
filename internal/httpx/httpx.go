@@ -13,43 +13,78 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/gofiber/fiber/v3"
+
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
-// Error is rendered as {"error":{"code","message","fields"}}.
+// Error is rendered as {"error":{"code","message","fields"}} in the language of the request.
+// Message and field messages are English text (dictionary keys) with optional {placeholders}.
 type Error struct {
-	Status  int                 `json:"-"`
-	Code    string              `json:"code"`
-	Message string              `json:"message"`
-	Fields  map[string][]string `json:"fields,omitempty"`
+	Status  int
+	Code    string
+	Message string
+	Args    []any
+	Fields  map[string][]i18n.Text
 }
 
-func (e *Error) Error() string { return e.Message }
+// Error returns the English message.
+func (e *Error) Error() string { return i18n.EN.T(e.Message, e.Args...) }
 
-func NewError(status int, code, msg string) *Error {
-	return &Error{Status: status, Code: code, Message: msg}
+// In renders the error body in a language.
+func (e *Error) In(l i18n.Lang) fiber.Map {
+	out := fiber.Map{"code": e.Code, "message": l.T(e.Message, e.Args...)}
+	if len(e.Fields) > 0 {
+		f := make(map[string][]string, len(e.Fields))
+		for k, msgs := range e.Fields {
+			for _, m := range msgs {
+				f[k] = append(f[k], m.In(l))
+			}
+		}
+		out["fields"] = f
+	}
+	return out
 }
 
-func BadRequest(msg string) *Error { return NewError(400, "bad_request", msg) }
-func Unauthorized(code, msg string) *Error {
+// NewError builds an error; args are {placeholder} name/value pairs for msg.
+func NewError(status int, code, msg string, args ...any) *Error {
+	return &Error{Status: status, Code: code, Message: msg, Args: args}
+}
+
+func BadRequest(msg string, args ...any) *Error { return NewError(400, "bad_request", msg, args...) }
+func Unauthorized(code, msg string, args ...any) *Error {
 	if code == "" {
 		code = "unauthenticated"
 	}
-	return NewError(401, code, msg)
+	return NewError(401, code, msg, args...)
 }
-func PaymentRequired(code, msg string) *Error { return NewError(402, code, msg) }
-func Forbidden(msg string) *Error             { return NewError(403, "forbidden", msg) }
-func NotFound(what string) *Error             { return NewError(404, "not_found", what+" not found") }
-func Conflict(msg string) *Error              { return NewError(409, "conflict", msg) }
-func NotImplemented(msg string) *Error        { return NewError(501, "not_implemented", msg) }
+func PaymentRequired(code, msg string, args ...any) *Error {
+	return NewError(402, code, msg, args...)
+}
+func Forbidden(msg string, args ...any) *Error { return NewError(403, "forbidden", msg, args...) }
+
+// NotFound says "<what> not found"; what is an English noun ("Product") and is translated too.
+func NotFound(what string) *Error {
+	return NewError(404, "not_found", "{what} not found", "what", i18n.Tr(what))
+}
+func Conflict(msg string, args ...any) *Error { return NewError(409, "conflict", msg, args...) }
+func NotImplemented(msg string, args ...any) *Error {
+	return NewError(501, "not_implemented", msg, args...)
+}
 
 // Validation collects field errors; call Err() to get nil when there are none.
-type Validation struct{ Fields map[string][]string }
+type Validation struct{ Fields map[string][]i18n.Text }
 
-func (v *Validation) Add(field, msg string) {
+// Add records a message (English, with optional {placeholder} name/value pairs) for a field.
+func (v *Validation) Add(field, msg string, args ...any) {
+	v.AddText(field, i18n.Tr(msg, args...))
+}
+
+// AddText records an already built message.
+func (v *Validation) AddText(field string, t i18n.Text) {
 	if v.Fields == nil {
-		v.Fields = map[string][]string{}
+		v.Fields = map[string][]i18n.Text{}
 	}
-	v.Fields[field] = append(v.Fields[field], msg)
+	v.Fields[field] = append(v.Fields[field], t)
 }
 
 func (v *Validation) Err() error {
@@ -59,11 +94,54 @@ func (v *Validation) Err() error {
 	return &Error{Status: 422, Code: "validation_failed", Message: "Some fields are invalid.", Fields: v.Fields}
 }
 
-func Invalid(field, msg string) error {
+// Invalid is a validation error for one field.
+func Invalid(field, msg string, args ...any) error {
 	v := &Validation{}
-	v.Add(field, msg)
+	v.Add(field, msg, args...)
 	return v.Err()
 }
+
+// ---------- language ----------
+
+const langKey = "lestari.lang"
+
+type langInfo struct {
+	lang     i18n.Lang
+	explicit bool
+}
+
+// LangMiddleware reads Accept-Language (en / id) for the rest of the request.
+func LangMiddleware() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if l, ok := i18n.Parse(c.Get("Accept-Language")); ok {
+			SetLang(c, l, true)
+		}
+		c.Append("Vary", "Accept-Language")
+		return c.Next()
+	}
+}
+
+// SetLang sets the response language; explicit means the client asked for it (Accept-Language).
+func SetLang(c fiber.Ctx, l i18n.Lang, explicit bool) {
+	c.Locals(langKey, langInfo{l, explicit})
+}
+
+// Lang is the language of the response (English unless the client or the branch settings chose another).
+func Lang(c fiber.Ctx) i18n.Lang {
+	if li, ok := c.Locals(langKey).(langInfo); ok {
+		return li.lang
+	}
+	return i18n.EN
+}
+
+// LangExplicit reports whether the client sent a supported Accept-Language.
+func LangExplicit(c fiber.Ctx) bool {
+	li, ok := c.Locals(langKey).(langInfo)
+	return ok && li.explicit
+}
+
+// T translates text into the language of the request.
+func T(c fiber.Ctx, s string, args ...any) string { return Lang(c).T(s, args...) }
 
 // ErrorHandler is installed as Fiber's ErrorHandler.
 func ErrorHandler(log func(err error)) fiber.ErrorHandler {
@@ -84,7 +162,8 @@ func ErrorHandler(log func(err error)) fiber.ErrorHandler {
 			}
 			e = NewError(500, "internal_error", "Something went wrong. Please try again.")
 		}
-		return c.Status(e.Status).JSON(fiber.Map{"error": e})
+		c.Set("Content-Language", string(Lang(c)))
+		return c.Status(e.Status).JSON(fiber.Map{"error": e.In(Lang(c))})
 	}
 }
 
@@ -167,7 +246,7 @@ func Decode(c fiber.Ctx, v any) error {
 		return nil
 	}
 	if err := json.Unmarshal(b, v); err != nil {
-		return BadRequest("Request body is not valid JSON: " + err.Error())
+		return BadRequest("Request body is not valid JSON: {error}", "error", err.Error())
 	}
 	return nil
 }

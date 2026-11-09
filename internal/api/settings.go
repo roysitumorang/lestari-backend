@@ -17,6 +17,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/export"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 type settingDef struct {
@@ -237,7 +238,7 @@ func (a *API) putSetting(key string) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		a.activity(c, "settings_updated", "Updated "+key+" settings")
+		a.activity(c, "settings_updated", "Updated {key} settings", "key", key)
 		return a.getSetting(key)(c)
 	}
 }
@@ -323,11 +324,12 @@ func (a *API) menuBook(c fiber.Ctx) error {
 	}
 	name, _, _ := a.storeHeader(c.Context(), p.BranchID)
 	d := export.NewPDF(595, 842)
+	tr := httpx.Lang(c).T
 	d.Page()
 	y := 790.0
 	d.Text(40, y, 20, true, name)
 	y -= 22
-	d.Text(40, y, 11, false, "Menu")
+	d.Text(40, y, 11, false, tr("Menu"))
 	y -= 30
 	last := ""
 	for _, r := range rows {
@@ -454,7 +456,7 @@ func (a *API) resetOTP(c fiber.Ctx) error {
 	if in.Channel == "whatsapp" && phone != nil && *phone != "" {
 		to, channel = *phone, "whatsapp"
 	}
-	if err := a.Sender.Send(c.Context(), channel, to, "Your Lestari data-reset code is "+code+". Do not share it."); err != nil {
+	if err := a.Sender.Send(c.Context(), channel, to, httpx.T(c, "Your Lestari data-reset code is {code}. Do not share it.", "code", code)); err != nil {
 		return err
 	}
 	return httpx.OK(c, fiber.Map{"expires_in": 300, "sent_to": mask(to)})
@@ -493,7 +495,7 @@ func (a *API) resetData(c fiber.Ctx) error {
 	}
 	for _, t := range in.DataTypes {
 		if !contains(resetTypes, t) {
-			v.Add("data_types", "Unknown data type "+t+".")
+			v.Add("data_types", "Unknown data type {type}.", "type", t)
 		}
 	}
 	if in.Scope == "" {
@@ -520,7 +522,7 @@ func (a *API) resetData(c fiber.Ctx) error {
 	if err := a.checkOTP(c.Context(), p.UserID, "reset_data", "", in.OTP); err != nil {
 		he := &httpx.Error{}
 		if errors.As(err, &he) {
-			he.Fields = map[string][]string{"otp": he.Fields["code"]}
+			he.Fields = map[string][]i18n.Text{"otp": he.Fields["code"]}
 		}
 		return err
 	}
@@ -582,6 +584,6 @@ func (a *API) resetData(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	a.activity(c, "data_reset", "Reset "+strings.Join(types, ", "))
+	a.activity(c, "data_reset", "Reset {types}", "types", strings.Join(types, ", "))
 	return httpx.OK(c, fiber.Map{"job_id": id, "status": "queued"})
 }

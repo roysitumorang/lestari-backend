@@ -168,7 +168,7 @@ func (a *API) sendPhoneOTP(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if err := a.Sender.Send(c.Context(), in.Channel, in.Phone, "Your Lestari verification code is "+code); err != nil {
+	if err := a.Sender.Send(c.Context(), in.Channel, in.Phone, httpx.T(c, "Your Lestari verification code is {code}", "code", code)); err != nil {
 		return err
 	}
 	return httpx.OK(c, fiber.Map{"expires_in": 300})
@@ -288,12 +288,15 @@ func (a *API) activityList(c fiber.Ctx, userID string) error {
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM activity_logs WHERE store_id=$1 AND user_id=$2`, p.StoreID, userID).Scan(&total); err != nil {
 		return err
 	}
-	raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT id, created_at, action, description, ip_address, user_agent FROM activity_logs
+	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT id, created_at, action, description, params, ip_address, user_agent FROM activity_logs
 		WHERE store_id=$1 AND user_id=$2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`, p.StoreID, userID, pg.PerPage, pg.Offset)
 	if err != nil {
 		return err
 	}
-	return httpx.List(c, raw, httpx.NewMeta(pg, total))
+	for _, r := range rows {
+		localize(httpx.Lang(c), r, "description")
+	}
+	return httpx.List(c, rows, httpx.NewMeta(pg, total))
 }
 
 func (a *API) myActivity(c fiber.Ctx) error { return a.activityList(c, httpx.P(c).UserID) }

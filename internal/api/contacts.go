@@ -155,6 +155,7 @@ func (a *API) customerQRCodes(c fiber.Ctx) error {
 		return err
 	}
 	d := export.NewPDF(595, 842)
+	tr := httpx.Lang(c).T
 	card := c.Query("layout") == "card"
 	cellW, cellH := 180.0, 200.0
 	if card {
@@ -186,7 +187,7 @@ func (a *API) customerQRCodes(c fiber.Ctx) error {
 		d.Text(tx, ty-14, 9, false, code)
 	}
 	if len(rows) == 0 {
-		d.Text(40, 780, 12, false, "No customers selected.")
+		d.Text(40, 780, 12, false, tr("No customers selected."))
 	}
 	return export.Send(c, "customer-qr-codes.pdf", "application/pdf", d.Bytes())
 }

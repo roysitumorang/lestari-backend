@@ -18,6 +18,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/internal/auth"
 	"github.com/roysitumorang/lestari-backend/internal/db"
 	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
 type Kind int
@@ -286,7 +287,7 @@ func (r *Resource) listWhere(c fiber.Ctx, b *Builder, p *httpx.Principal) []stri
 			continue
 		}
 		val, err := coerce(f, v)
-		if err != "" || val == nil {
+		if err.Key != "" || val == nil {
 			continue
 		}
 		expr := "t." + f.col()
@@ -505,8 +506,8 @@ func (r *Resource) Values(body map[string]any, id string) (map[string]any, error
 			continue
 		}
 		val, msg := coerce(f, raw)
-		if msg != "" {
-			v.Add(f.Name, msg)
+		if msg.Key != "" {
+			v.AddText(f.Name, msg)
 			continue
 		}
 		if val == nil && f.Default != nil && (id == "" || f.Kind == JSON || f.Kind == IntArray || f.Kind == UUIDArray || f.Kind == StrArray || f.Kind == Bool) {
@@ -615,7 +616,7 @@ func (e *Engine) SaveCtx(ctx context.Context, c fiber.Ctx, r *Resource, body map
 func mapWriteErr(r *Resource, err error) error {
 	switch {
 	case db.IsUniqueViolation(err):
-		return httpx.Conflict("A " + strings.ToLower(r.Singular) + " with the same code or name already exists.")
+		return httpx.Conflict("A {item} with the same code or name already exists.", "item", i18n.Tr(r.Singular))
 	case db.IsForeignKeyViolation(err):
 		return httpx.Invalid("id", "A referenced record does not exist.")
 	}
@@ -639,7 +640,7 @@ func (e *Engine) deleteOne(ctx context.Context, c fiber.Ctx, tx pgx.Tx, r *Resou
 		_, err = tx.Exec(ctx, "DELETE FROM "+r.Table+" WHERE id = $1", id)
 	}
 	if db.IsForeignKeyViolation(err) {
-		return httpx.Conflict("This " + strings.ToLower(r.Singular) + " is still used by other records.")
+		return httpx.Conflict("This {item} is still used by other records.", "item", i18n.Tr(r.Singular))
 	}
 	return err
 }
@@ -688,12 +689,12 @@ func (e *Engine) BulkDelete(r *Resource) fiber.Handler {
 
 // ---------- value coercion ----------
 
-func coerce(f Field, raw any) (any, string) {
+func coerce(f Field, raw any) (any, i18n.Text) {
 	if raw == nil {
-		return nil, ""
+		return nil, i18n.Text{}
 	}
 	if s, ok := raw.(string); ok && strings.TrimSpace(s) == "" && f.Kind != JSON {
-		return nil, ""
+		return nil, i18n.Text{}
 	}
 	switch f.Kind {
 	case String:
@@ -706,12 +707,12 @@ func coerce(f Field, raw any) (any, string) {
 		case bool:
 			s = strconv.FormatBool(x)
 		default:
-			return nil, "Must be text."
+			return nil, i18n.Tr("Must be text.")
 		}
 		if len(f.Enum) > 0 && !contains(f.Enum, s) {
-			return nil, "Must be one of: " + strings.Join(f.Enum, ", ") + "."
+			return nil, i18n.Tr("Must be one of: {values}.", "values", strings.Join(f.Enum, ", "))
 		}
-		return s, ""
+		return s, i18n.Text{}
 	case Int, Num:
 		var n float64
 		switch x := raw.(type) {
@@ -721,73 +722,73 @@ func coerce(f Field, raw any) (any, string) {
 			var err error
 			n, err = strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(x), ",", ""), 64)
 			if err != nil {
-				return nil, "Must be a number."
+				return nil, i18n.Tr("Must be a number.")
 			}
 		case bool:
-			return nil, "Must be a number."
+			return nil, i18n.Tr("Must be a number.")
 		default:
-			return nil, "Must be a number."
+			return nil, i18n.Tr("Must be a number.")
 		}
 		if len(f.Enum) > 0 && !contains(f.Enum, strconv.FormatFloat(n, 'f', -1, 64)) {
-			return nil, "Must be one of: " + strings.Join(f.Enum, ", ") + "."
+			return nil, i18n.Tr("Must be one of: {values}.", "values", strings.Join(f.Enum, ", "))
 		}
 		if f.Min != nil && n < *f.Min {
-			return nil, "Must be at least " + strconv.FormatFloat(*f.Min, 'f', -1, 64) + "."
+			return nil, i18n.Tr("Must be at least {min}.", "min", strconv.FormatFloat(*f.Min, 'f', -1, 64))
 		}
 		if f.Max != nil && n > *f.Max {
-			return nil, "Must be at most " + strconv.FormatFloat(*f.Max, 'f', -1, 64) + "."
+			return nil, i18n.Tr("Must be at most {max}.", "max", strconv.FormatFloat(*f.Max, 'f', -1, 64))
 		}
 		if f.Kind == Int {
-			return int64(n), ""
+			return int64(n), i18n.Text{}
 		}
-		return n, ""
+		return n, i18n.Text{}
 	case Bool:
 		switch x := raw.(type) {
 		case bool:
-			return x, ""
+			return x, i18n.Text{}
 		case string:
 			s := strings.ToLower(strings.TrimSpace(x))
-			return s == "true" || s == "1" || s == "yes" || s == "y" || s == "on", ""
+			return s == "true" || s == "1" || s == "yes" || s == "y" || s == "on", i18n.Text{}
 		case float64:
-			return x != 0, ""
+			return x != 0, i18n.Text{}
 		}
-		return nil, "Must be true or false."
+		return nil, i18n.Tr("Must be true or false.")
 	case Date:
 		s, ok := raw.(string)
 		if !ok || len(s) < 10 {
-			return nil, "Use the format YYYY-MM-DD."
+			return nil, i18n.Tr("Use the format YYYY-MM-DD.")
 		}
 		if _, err := time.Parse("2006-01-02", s[:10]); err != nil {
-			return nil, "Use the format YYYY-MM-DD."
+			return nil, i18n.Tr("Use the format YYYY-MM-DD.")
 		}
-		return s[:10], ""
+		return s[:10], i18n.Text{}
 	case Time:
 		s, ok := raw.(string)
 		if !ok {
-			return nil, "Use the format HH:mm."
+			return nil, i18n.Tr("Use the format HH:mm.")
 		}
 		if _, err := time.Parse("15:04", s[:min(5, len(s))]); err != nil {
-			return nil, "Use the format HH:mm."
+			return nil, i18n.Tr("Use the format HH:mm.")
 		}
-		return s[:5], ""
+		return s[:5], i18n.Text{}
 	case Timestamp:
 		s, ok := raw.(string)
 		if !ok {
-			return nil, "Use an ISO 8601 date-time."
+			return nil, i18n.Tr("Use an ISO 8601 date-time.")
 		}
 		t, err := time.Parse(time.RFC3339, s)
 		if err != nil {
-			return nil, "Use an ISO 8601 date-time."
+			return nil, i18n.Tr("Use an ISO 8601 date-time.")
 		}
-		return t, ""
+		return t, i18n.Text{}
 	case JSON:
 		if s, ok := raw.(string); ok {
 			if strings.TrimSpace(s) == "" {
-				return nil, ""
+				return nil, i18n.Text{}
 			}
 			var x any
 			if err := json.Unmarshal([]byte(s), &x); err != nil {
-				return nil, "Must be valid JSON."
+				return nil, i18n.Tr("Must be valid JSON.")
 			}
 			raw = x
 		}
@@ -801,15 +802,15 @@ func coerce(f Field, raw any) (any, string) {
 				}
 				clean = append(clean, it)
 			}
-			return clean, ""
+			return clean, i18n.Text{}
 		case map[string]any:
-			return x, ""
+			return x, i18n.Text{}
 		}
-		return nil, "Must be a list or object."
+		return nil, i18n.Tr("Must be a list or object.")
 	case IntArray:
 		arr, ok := toList(raw)
 		if !ok {
-			return nil, "Must be a list of numbers."
+			return nil, i18n.Tr("Must be a list of numbers.")
 		}
 		out := make([]int64, 0, len(arr))
 		for _, it := range arr {
@@ -819,52 +820,52 @@ func coerce(f Field, raw any) (any, string) {
 			case string:
 				n, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
 				if err != nil {
-					return nil, "Must be a list of numbers."
+					return nil, i18n.Tr("Must be a list of numbers.")
 				}
 				out = append(out, n)
 			default:
-				return nil, "Must be a list of numbers."
+				return nil, i18n.Tr("Must be a list of numbers.")
 			}
 		}
-		return out, ""
+		return out, i18n.Text{}
 	case UUID:
 		s, ok := raw.(string)
 		s = strings.ToLower(strings.TrimSpace(s))
 		if !ok || !httpx.IsUUID(s) {
-			return nil, "Must be a UUID."
+			return nil, i18n.Tr("Must be a UUID.")
 		}
-		return s, ""
+		return s, i18n.Text{}
 	case UUIDArray:
 		arr, ok := toList(raw)
 		if !ok {
-			return nil, "Must be a list of UUIDs."
+			return nil, i18n.Tr("Must be a list of UUIDs.")
 		}
 		out := make([]string, 0, len(arr))
 		for _, it := range arr {
 			s, _ := it.(string)
 			s = strings.ToLower(strings.TrimSpace(s))
 			if !httpx.IsUUID(s) {
-				return nil, "Must be a list of UUIDs."
+				return nil, i18n.Tr("Must be a list of UUIDs.")
 			}
 			out = append(out, s)
 		}
-		return out, ""
+		return out, i18n.Text{}
 	case StrArray:
 		arr, ok := toList(raw)
 		if !ok {
-			return nil, "Must be a list."
+			return nil, i18n.Tr("Must be a list.")
 		}
 		out := make([]string, 0, len(arr))
 		for _, it := range arr {
 			s := fmt.Sprint(it)
 			if len(f.Enum) > 0 && !contains(f.Enum, s) {
-				return nil, "Values must be from: " + strings.Join(f.Enum, ", ") + "."
+				return nil, i18n.Tr("Values must be from: {values}.", "values", strings.Join(f.Enum, ", "))
 			}
 			out = append(out, s)
 		}
-		return out, ""
+		return out, i18n.Text{}
 	}
-	return raw, ""
+	return raw, i18n.Text{}
 }
 
 func toList(raw any) ([]any, bool) {
