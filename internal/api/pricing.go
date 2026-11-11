@@ -25,16 +25,6 @@ func (a *API) registerPricing() {
 		BeforeWrite: percentAtMost100("type", "value"),
 	}, withBulk...)
 
-	a.CRUD.Register(a.addH, "/taxes", &crud.Resource{
-		Name: "Taxes", Singular: "Tax", Table: "taxes", DefaultSort: "t.name",
-		Fields: []crud.Field{
-			{Name: "name", Required: true, Search: true},
-			{Name: "rate", Kind: crud.Num, Required: true, Min: new(float64(0)), Max: new(float64(100))},
-			{Name: "is_inclusive", Kind: crud.Bool, Default: false},
-			{Name: "is_active", Kind: crud.Bool, Default: true, Filter: true},
-		},
-	}, withBulk...)
-
 	a.CRUD.Register(a.addH, "/fees", &crud.Resource{
 		Name: "Fees", Singular: "Fee", Table: "fees", DefaultSort: "t.name",
 		Fields: []crud.Field{

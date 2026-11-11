@@ -12,16 +12,20 @@ import (
 	"github.com/roysitumorang/lestari-backend/config"
 	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/internal/api"
+	"github.com/roysitumorang/lestari-backend/middlewares"
 	"github.com/roysitumorang/lestari-backend/migrations"
 	"github.com/roysitumorang/lestari-backend/repositories"
+	"github.com/roysitumorang/lestari-backend/services"
 )
 
 // Service is the composition root: everything a controller can ask for.
 type Service struct {
-	Config    config.Config
-	DbRead    *pgxpool.Pool
-	DbWrite   *pgxpool.Pool
-	Migration *migrations.Migration
+	Config      config.Config
+	DbRead      *pgxpool.Pool
+	DbWrite     *pgxpool.Pool
+	Migration   *migrations.Migration
+	AuthService *middlewares.Service
+	TaxService  services.TaxService
 	// API holds the handlers that have not been moved to controllers yet.
 	API *api.API
 }
@@ -49,12 +53,17 @@ func MakeHandler(ctx context.Context, cfg config.Config) (*Service, error) {
 func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	helper.AppName = config.AppName
 	repositories.SetDbWrite(dbWrite)
+	legacy := api.New(dbWrite, cfg, helper.NewLogger())
+	taxRepository := repositories.NewTaxRepository(dbRead, dbWrite)
+	taxService := services.NewTaxService(taxRepository)
 	return &Service{
-		Config:    cfg,
-		DbRead:    dbRead,
-		DbWrite:   dbWrite,
-		Migration: migrations.NewMigration(dbWrite),
-		API:       api.New(dbWrite, cfg, helper.NewLogger()),
+		Config:      cfg,
+		DbRead:      dbRead,
+		DbWrite:     dbWrite,
+		Migration:   migrations.NewMigration(dbWrite),
+		AuthService: legacy.Auth,
+		TaxService:  taxService,
+		API:         legacy,
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-json"
+	"github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
@@ -22,6 +23,8 @@ import (
 	"github.com/gofiber/utils/v2"
 
 	"github.com/roysitumorang/lestari-backend/config"
+	"github.com/roysitumorang/lestari-backend/controllers"
+	_ "github.com/roysitumorang/lestari-backend/docs" // generated Swagger spec
 	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/repositories"
 )
@@ -75,7 +78,15 @@ func (q *Service) NewApp(log *slog.Logger) *fiber.App {
 		return helper.OK(c, fiber.Map{"status": "ok"})
 	})
 
+	if !cfg.IsProduction() {
+		// Swagger UI with a data example for every documented endpoint: /swagger/index.html (make doc regenerates it)
+		app.Get("/swagger/*", swaggo.HandlerDefault)
+	}
 	v1 := app.Group(cfg.APIPrefix)
+	controllers.NewTaxController(
+		q.AuthService,
+		q.TaxService,
+	).Mount(v1.Group("/taxes"))
 	// handlers that still live in internal/api (being moved to controllers, one group at a time)
 	q.API.Mount(v1)
 	return app

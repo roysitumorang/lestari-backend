@@ -423,6 +423,66 @@ func TestIntegrationWorkflows(t *testing.T) {
 
 var uuidV7 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
+// TestIntegrationTaxes exercises the tax endpoints end to end (model, sanitizer, repository, service, controller).
+func TestIntegrationTaxes(t *testing.T) {
+	h := setup(t)
+	fields := func(m map[string]any) map[string]any {
+		d, _ := m["data"].(map[string]any)
+		f, _ := d["fields"].(map[string]any)
+		return f
+	}
+	// validation: required, types and range, all reported together
+	bad := h.json("POST", "/taxes", map[string]any{"rate": "x", "is_active": "yes"}, 422)
+	if f := fields(bad); f["name"] == nil || f["rate"] == nil || f["is_active"] == nil {
+		t.Fatalf("validation fields: %v", bad)
+	}
+	h.json("POST", "/taxes", map[string]any{"name": "Luxury", "rate": 150}, 422)
+	// create with defaults
+	created := h.json("POST", "/taxes", map[string]any{"name": "  Zz Service tax ", "rate": 7.5}, 201)["data"].(map[string]any)
+	id := created["id"].(string)
+	if !uuidV7.MatchString(id) || created["name"] != "Zz Service tax" || created["rate"] != 7.5 || created["is_active"] != true || created["is_inclusive"] != false {
+		t.Fatalf("created: %v", created)
+	}
+	// partial update keeps the other attributes
+	updated := h.json("PUT", "/taxes/"+id, map[string]any{"is_inclusive": true}, 200)["data"].(map[string]any)
+	if updated["is_inclusive"] != true || updated["name"] != "Zz Service tax" || updated["rate"] != 7.5 {
+		t.Fatalf("updated: %v", updated)
+	}
+	h.json("PUT", "/taxes/"+id, map[string]any{"name": ""}, 422)
+	// list: search, filter, sort, paging
+	list := h.json("GET", "/taxes?q=zz+service&is_active=true&sort=rate&order=desc&per_page=1", nil, 200)
+	if r := rows(list); len(r) != 1 || r[0].(map[string]any)["id"] != id {
+		t.Fatalf("list: %v", list)
+	}
+	info := list["data"].(map[string]any)["info"].(map[string]any)
+	if info["limit"] != float64(1) || info["page"] != float64(1) || info["total"] != float64(1) {
+		t.Fatalf("info: %v", info)
+	}
+	if r := rows(h.json("GET", "/taxes?sort=name&order=desc", nil, 200)); len(r) < 2 || r[0].(map[string]any)["id"] != id {
+		t.Fatalf("sorted list should start with the new tax: %v", r)
+	}
+	h.json("GET", "/taxes/"+id, nil, 200)
+	h.json("GET", "/taxes/not-a-uuid", nil, 404)
+	// deleting a tax a product uses clears it on the product
+	used := h.json("POST", "/taxes", map[string]any{"name": "Zz Used", "rate": 2}, 201)["data"].(map[string]any)["id"].(string)
+	prod := h.json("POST", "/products", map[string]any{"name": "Taxed item", "selling_price": 1000, "tax_id": used}, 201)["data"].(map[string]any)
+	h.json("DELETE", "/taxes/"+used, nil, 204)
+	if got := h.json("GET", "/products/"+prod["id"].(string), nil, 200)["data"].(map[string]any); got["tax_id"] != nil {
+		t.Fatalf("product still points at the deleted tax: %v", got["tax_id"])
+	}
+	h.json("DELETE", "/products/"+prod["id"].(string), nil, 204)
+	// bulk delete is all or nothing
+	other := h.json("POST", "/taxes", map[string]any{"name": "Zz Temp", "rate": 1}, 201)["data"].(map[string]any)["id"].(string)
+	h.json("POST", "/taxes/bulk-delete", map[string]any{"ids": []any{id, "00000000-0000-7000-8000-000000000000"}}, 404)
+	h.json("GET", "/taxes/"+id, nil, 200)
+	h.json("POST", "/taxes/bulk-delete", map[string]any{"ids": []any{}}, 422)
+	if d := h.json("POST", "/taxes/bulk-delete", map[string]any{"ids": []any{id, other}}, 200)["data"].(map[string]any); d["deleted"] != float64(2) {
+		t.Fatalf("bulk delete: %v", d)
+	}
+	h.json("GET", "/taxes/"+id, nil, 404)
+	h.json("DELETE", "/taxes/"+other, nil, 404)
+}
+
 // TestIntegrationLanguage checks that messages, notifications and files follow Accept-Language, then the
 // branch's display language.
 func TestIntegrationLanguage(t *testing.T) {

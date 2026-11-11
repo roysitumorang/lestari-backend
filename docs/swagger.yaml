@@ -1,0 +1,453 @@
+basePath: /api/v1
+consumes:
+- application/json
+definitions:
+  controllers.BulkDeleteRequest:
+    properties:
+      ids:
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b
+        items:
+          type: string
+        type: array
+    type: object
+  controllers.DeletedResponse:
+    properties:
+      deleted:
+        example: 3
+        type: integer
+    type: object
+  helper.ErrorData:
+    properties:
+      code:
+        example: validation_failed
+        type: string
+      fields:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        type: object
+    type: object
+  helper.Pagination:
+    properties:
+      chart: {}
+      info:
+        properties:
+          limit:
+            example: 25
+            type: integer
+          page:
+            example: 1
+            type: integer
+          pages:
+            example: 5
+            type: integer
+          total:
+            example: 120
+            type: integer
+        type: object
+      links:
+        properties:
+          current:
+            example: http://localhost:8080/api/v1/taxes?page=1&per_page=25
+            type: string
+          first:
+            example: http://localhost:8080/api/v1/taxes?per_page=25
+            type: string
+          last:
+            example: http://localhost:8080/api/v1/taxes?page=5&per_page=25
+            type: string
+          next:
+            example: http://localhost:8080/api/v1/taxes?page=2&per_page=25
+            type: string
+          previous:
+            example: ""
+            type: string
+        type: object
+      rows: {}
+      summary:
+        description: reports only
+      totals: {}
+    type: object
+  helper.Response:
+    properties:
+      app:
+        example: lestari
+        type: string
+      data: {}
+      latency:
+        example: 7.746177ms
+        type: string
+      message:
+        example: ""
+        type: string
+      request_id:
+        example: 6ba3451b-ac73-483e-8481-2ac53f5e75a2
+        type: string
+      request_url:
+        example: GET http://localhost:8080/api/v1/taxes
+        type: string
+      status:
+        example: OK
+        type: string
+      status_code:
+        example: 200
+        type: integer
+      timestamp:
+        example: "2026-11-11T14:22:47.608963985+07:00"
+        type: string
+    type: object
+  models.Tax:
+    properties:
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      is_inclusive:
+        example: false
+        type: boolean
+      name:
+        example: PPN
+        type: string
+      rate:
+        example: 11
+        type: number
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.TaxRequest:
+    properties:
+      is_active:
+        example: true
+        type: boolean
+      is_inclusive:
+        example: false
+        type: boolean
+      name:
+        example: PPN
+        type: string
+      rate:
+        example: 11
+        maximum: 100
+        minimum: 0
+        type: number
+    type: object
+info:
+  contact:
+    name: Roy Situmorang
+  description: Back-office API of the Lestari point of sale. Every response uses the
+    same envelope; lists put a page of rows in data, errors put a code (and field
+    messages) there.
+  title: Lestari API
+  version: 0.1.0
+paths:
+  /taxes:
+    get:
+      description: Taxes of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: only active / inactive taxes
+        in: query
+        name: is_active
+        type: boolean
+      - default: name
+        description: sort field
+        enum:
+        - name
+        - rate
+        - is_inclusive
+        - is_active
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.Tax'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List taxes
+      tags:
+      - Taxes
+    post:
+      description: name and rate (0–100) are required; is_inclusive defaults to false
+        and is_active to true.
+      parameters:
+      - description: tax
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TaxRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Tax'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a tax
+      tags:
+      - Taxes
+  /taxes/{id}:
+    delete:
+      description: Products that used the tax keep working without it.
+      parameters:
+      - description: tax id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a tax
+      tags:
+      - Taxes
+    get:
+      parameters:
+      - description: tax id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Tax'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one tax
+      tags:
+      - Taxes
+    put:
+      description: Only the attributes present in the body are changed.
+      parameters:
+      - description: tax id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.TaxRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Tax'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a tax
+      tags:
+      - Taxes
+  /taxes/bulk-delete:
+    post:
+      description: 'All or nothing: an unknown id (404) deletes none.'
+      parameters:
+      - description: ids to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.BulkDeleteRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/controllers.DeletedResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete several taxes
+      tags:
+      - Taxes
+produces:
+- application/json
+schemes:
+- http
+- https
+security:
+- BearerAuth: []
+securityDefinitions:
+  BearerAuth:
+    description: '"Bearer <access_token>" from POST /auth/login'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

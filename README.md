@@ -16,7 +16,7 @@ REST API for the **Lestari** back office (point of sale for small shops). It imp
 ## Quick start
 
 ```bash
-cp .env.example .env            # adjust DATABASE_URL and JWT_SECRET
+cp .env.sample .env             # adjust DB_WRITE_URL and JWT_SECRET
 docker compose up -d db         # or use your own PostgreSQL
 make seed                       # migrate + demo store: demo@lestari.id / demo12345
 make run                        # http://localhost:8080/api/v1
@@ -31,8 +31,10 @@ Everything in Docker: `docker compose up --build` (API on :8080, migrations run 
 ### Commands
 
 ```
-lestari serve     # default: run pending migrations, then serve HTTP
-lestari migrate   # apply migrations and exit
+lestari run             # run pending migrations, then serve HTTP (alias: serve)
+lestari migration run   # apply migrations and exit
+lestari migration new   # create an empty migration file
+lestari version         # version, commit and build time
 lestari seed      # (re)create the demo store with sample data
 lestari routes    # list every endpoint
 ```
@@ -41,10 +43,13 @@ lestari routes    # list every endpoint
 
 | Variable | Default | |
 |---|---|---|
-| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/lestari?sslmode=disable` | |
+| `DB_WRITE_URL` (or `DATABASE_URL`) | `postgres://postgres:postgres@localhost:5432/lestari?sslmode=disable` | |
 | `JWT_SECRET` | `change-me-in-production` | **required** in production (server refuses to start otherwise); also signs payment webhooks |
-| `APP_ENV` | `development` | `production` hides stack traces and the access log |
-| `APP_ADDR` | `:8080` | |
+| `ENV` (or `APP_ENV`) | `development` | `production` hides stack traces and the access log |
+| `PORT` (or `APP_ADDR`) | `8080` | |
+| `DB_READ_URL` | same as write | optional read replica |
+| `DB_MAX_CONNECTIONS` | pgx default | per pool |
+| `LOG_LEVEL` | `info` | `error` logs only errors (JSON on stdout) |
 | `API_PREFIX` | `/api/v1` | |
 | `CORS_ORIGINS` | *(all)* | comma-separated origins of the client, e.g. `https://backoffice.example.com` |
 | `PUBLIC_URL` | `http://localhost:8080` | used to build upload and share links |
@@ -58,17 +63,23 @@ lestari routes    # list every endpoint
 ## Project layout
 
 ```
-cmd/lestari/            entry point (serve / migrate / seed / routes)
-internal/config         environment configuration
-internal/db             pgx pool, embedded SQL migrations, JSON query helpers
-internal/httpx          response envelope, errors, request principal, language, parsing
-internal/i18n           English / Bahasa Indonesia: Lang.T(), Accept-Language parsing, dictionary (id.go)
-internal/auth           JWT, refresh tokens, bcrypt, TOTP, auth middleware
-internal/crud           generic list/get/create/update/delete/bulk/import/export engine
-internal/export         XLSX, CSV, PDF writer (text, tables, Code 128, QR)
-internal/api            all endpoints, grouped by domain (catalog, sales, purchases, reports, …)
-internal/seed           demo store, created through the HTTP API
-internal/server         Fiber app (middleware, CORS, uploads, health) + tests
+main.go                 entry point: version / run / migration new|run / seed / routes (urfave/cli)
+config/                 environment, build info (ldflags), database pools
+router/handler.go       composition root: pools → repositories → services (Service)
+router/http.go          Fiber app, middleware chain, controllers mounted per resource (+ integration tests)
+controllers/            HTTP handlers, one file per entity; open the transaction, call services, write the envelope
+sanitizers/             request → model / filter, with field validation messages
+services/               business rules (interface + implementation), given the transaction by the caller
+repositories/           SQL per entity (interface + implementation), read and write pools, BeginTx
+models/                 entities, request bodies, filters with With…() builders, errors
+middlewares/            JWT, refresh tokens, bcrypt, TOTP, auth and plugin middleware
+migrations/             schema as Go functions registered by version, applied in one transaction
+helper/                 response envelope, errors, principal, language, logging (Log / Capture)
+i18n/                   English / Bahasa Indonesia: Lang.T(), Accept-Language parsing, dictionary (id.go)
+export/                 XLSX, CSV, PDF writer (text, tables, Code 128, QR)
+docs/                   generated Swagger spec (make doc), served at /swagger/index.html outside production
+seeds/                  demo store, created through the HTTP API
+internal/api, crud      endpoints not converted to the layers above yet (taxes are; the rest follow group by group)
 ```
 
 Resources that are plain records (products, customers, taxes, …) are declared once as a `crud.Resource`
@@ -102,7 +113,7 @@ d.Text(40, 790, 16, true, tr("DELIVERY NOTE"))
 
 Notifications and activity logs are stored untranslated with their placeholder values (`params`, migration
 `0003_i18n`) and translated when listed, so each reader sees their own language. The dictionary is
-`internal/i18n/id.go`; `go test ./internal/i18n` fails when a message has no translation, when placeholders differ,
+`i18n/id.go`; `go test ./i18n` fails when a message has no translation, when placeholders differ,
 or when a message is built with `+` / `fmt.Sprintf` instead of a template. Terminology follows lestari-client
 `js/i18n/id.js`.
 
@@ -179,7 +190,7 @@ adjustment and opname, credit purchase → payable → payment, transfer with co
 order status rules, uploads, error envelopes, UUID v7 ids and malformed-id handling, base64 passwords, and messages,
 notifications and files in Bahasa Indonesia via `Accept-Language` or the display setting).
 
-`internal/server/testdata/endpoints.txt` is the client's endpoint list; refresh it when the client changes
+`router/testdata/endpoints.txt` is the client's endpoint list; refresh it when the client changes
 (`node tools/generate-endpoints.js` in the client repo, then list `METHOD path` lines).
 
 ## Data
