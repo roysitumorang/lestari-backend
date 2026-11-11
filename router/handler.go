@@ -43,6 +43,8 @@ type Service struct {
 	ProductService       services.ProductService
 	StockService         services.StockService
 	StockOpnameService   services.StockOpnameService
+	StockTransferService services.StockTransferService
+	BranchProductService services.BranchProductService
 	// API holds the handlers that have not been moved to controllers yet.
 	API *api.API
 }
@@ -87,9 +89,12 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	promotionRepository := repositories.NewPromotionRepository(dbRead, dbWrite)
 	commissionRepository := repositories.NewCommissionRepository(dbRead, dbWrite)
 	jobRepository := repositories.NewJobRepository(dbRead, dbWrite)
+	notificationRepository := repositories.NewNotificationRepository(dbRead, dbWrite)
 	productRepository := repositories.NewProductRepository(dbRead, dbWrite)
 	stockRepository := repositories.NewStockRepository(dbRead, dbWrite)
 	stockOpnameRepository := repositories.NewStockOpnameRepository(dbRead, dbWrite)
+	stockTransferRepository := repositories.NewStockTransferRepository(dbRead, dbWrite)
+	branchProductRepository := repositories.NewBranchProductRepository(dbRead, dbWrite)
 	taxService := services.NewTaxService(taxRepository)
 	categoryService := services.NewCategoryService(categoryRepository)
 	cashDrawerService := services.NewCashDrawerService(cashDrawerRepository)
@@ -106,6 +111,8 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	productService := services.NewProductService(productRepository, stockRepository)
 	stockService := services.NewStockService(stockRepository, productRepository, jobService)
 	stockOpnameService := services.NewStockOpnameService(stockOpnameRepository, productRepository, stockRepository)
+	stockTransferService := services.NewStockTransferService(stockTransferRepository, productRepository, stockRepository, notificationRepository)
+	branchProductService := services.NewBranchProductService(branchProductRepository)
 	return &Service{
 		Config:               cfg,
 		DbRead:               dbRead,
@@ -128,6 +135,8 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 		ProductService:       productService,
 		StockService:         stockService,
 		StockOpnameService:   stockOpnameService,
+		StockTransferService: stockTransferService,
+		BranchProductService: branchProductService,
 		API:                  legacy,
 	}
 }

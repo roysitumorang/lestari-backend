@@ -708,3 +708,128 @@ func TestIntegrationProductsAndStock(t *testing.T) {
 		t.Errorf("recalculate: %v", job)
 	}
 }
+
+// TestIntegrationStockTransfers covers transfers between branches and the per-branch prices.
+func TestIntegrationStockTransfers(t *testing.T) {
+	h := setup(t)
+	today := time.Now().Format("2006-01-02")
+	data := func(m map[string]any) map[string]any { d, _ := m["data"].(map[string]any); return d }
+	stockOf := func(q string) float64 {
+		t.Helper()
+		r := first(h.json("GET", "/inventory/stocks?q="+q, nil, 200))
+		if r == nil {
+			return -1
+		}
+		return r["stock"].(float64)
+	}
+	var head, target string
+	for _, x := range rows(h.json("GET", "/branches", nil, 200)) {
+		if m := x.(map[string]any); m["is_head_office"] == false {
+			target = m["id"].(string)
+		} else {
+			head = m["id"].(string)
+		}
+	}
+	p := data(h.json("POST", "/products", map[string]any{"name": "Transfer probe", "selling_price": 9000, "purchase_price": 5000, "stock": 20}, 201))
+	pid, sku := p["id"].(string), p["sku"].(string)
+	item := func(qty float64) []any { return []any{map[string]any{"product_id": pid, "quantity": qty}} }
+
+	// validation: another branch, known products, enough stock
+	h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": head, "transfer_date": today, "items": item(1)}, 422)
+	h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": "0190a1b2-0000-7000-8000-000000000000", "transfer_date": today, "items": item(1)}, 422)
+	h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": target, "transfer_date": today}, 422)
+	h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": target, "transfer_date": today, "items": item(21)}, 422)
+	if got := stockOf(sku); got != 20 {
+		t.Fatalf("a refused transfer changed stock: %v", got)
+	}
+
+	// without confirmation the stock arrives at once and the product is created in the receiving branch
+	direct := data(h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": target, "transfer_date": today, "items": item(4)}, 201))
+	if direct["status"] != "completed" || direct["direction"] != "out" || direct["total_quantity"].(float64) != 4 {
+		t.Errorf("direct transfer: %v %v %v", direct["status"], direct["direction"], direct["total_quantity"])
+	}
+	if items, _ := direct["items"].([]any); len(items) != 1 || items[0].(map[string]any)["received_quantity"].(float64) != 4 {
+		t.Errorf("direct transfer items: %v", direct["items"])
+	}
+	h.json("DELETE", "/stock-transfers/"+direct["id"].(string), nil, 409)
+
+	// with confirmation: 6 sent, 4 received, 2 go back
+	pending := data(h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": target, "transfer_date": today, "requires_confirmation": true, "note": "restock", "items": item(6)}, 201))
+	tid := pending["id"].(string)
+	if pending["status"] != "pending" || stockOf(sku) != 10 {
+		t.Errorf("pending transfer: status %v, sender stock %v", pending["status"], stockOf(sku))
+	}
+	h.json("POST", "/stock-transfers/"+tid+"/accept", map[string]any{}, 403) // the sender cannot accept
+	cancelled := data(h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": target, "transfer_date": today, "requires_confirmation": true, "items": item(3)}, 201))
+	rejected := data(h.json("POST", "/stock-transfers", map[string]any{"to_branch_id": target, "transfer_date": today, "requires_confirmation": true, "items": item(2)}, 201))
+	if len(rows(h.json("GET", "/stock-transfers?direction=out&status=pending&q=TRF", nil, 200))) < 3 || len(rows(h.json("GET", "/stock-transfers?direction=in&status=pending", nil, 200))) != 0 {
+		t.Error("direction filter of the sender")
+	}
+
+	h.branch = target
+	if got := stockOf(sku); got != 4 {
+		t.Errorf("receiver stock after the direct transfer: %v", got)
+	}
+	if seen := data(h.json("GET", "/stock-transfers/"+tid, nil, 200)); seen["direction"] != "in" || seen["from_branch_name"] == "" {
+		t.Errorf("transfer seen by the receiver: %v %v", seen["direction"], seen["from_branch_name"])
+	}
+	h.json("DELETE", "/stock-transfers/"+tid, nil, 403) // the receiver cannot delete
+	h.json("POST", "/stock-transfers/"+tid+"/accept", map[string]any{"items": []any{map[string]any{"product_id": pid, "received_quantity": 7}}}, 422)
+	accepted := data(h.json("POST", "/stock-transfers/"+tid+"/accept", map[string]any{"items": []any{map[string]any{"product_id": pid, "received_quantity": 4}}, "note": "two missing"}, 200))
+	if accepted["status"] != "accepted" || accepted["note"] != "two missing" || accepted["items"].([]any)[0].(map[string]any)["received_quantity"].(float64) != 4 {
+		t.Errorf("accepted transfer: %v", accepted)
+	}
+	h.json("POST", "/stock-transfers/"+tid+"/accept", map[string]any{}, 409)
+	h.json("POST", "/stock-transfers/"+rejected["id"].(string)+"/reject", map[string]any{}, 422)
+	if got := data(h.json("POST", "/stock-transfers/"+rejected["id"].(string)+"/reject", map[string]any{"reason": "not ordered"}, 200)); got["status"] != "rejected" || got["reject_reason"] != "not ordered" {
+		t.Errorf("rejected transfer: %v %v", got["status"], got["reject_reason"])
+	}
+	if got := stockOf(sku); got != 8 {
+		t.Errorf("receiver stock after accepting 4 of 6: %v", got)
+	}
+	if code, b, _ := h.call("GET", "/stock-transfers/"+tid+"/print", nil); code != 200 || !strings.HasPrefix(string(b), "%PDF") {
+		t.Errorf("print: status %d", code)
+	}
+	if len(rows(h.json("GET", "/notifications", nil, 200))) == 0 {
+		t.Error("the receiving branch got no notification")
+	}
+
+	h.branch = ""
+	h.json("DELETE", "/stock-transfers/"+cancelled["id"].(string), nil, 204)
+	h.json("GET", "/stock-transfers/"+cancelled["id"].(string), nil, 404)
+	// 20 - 4 (direct) - 6 + 2 (not received) - 3 + 3 (cancelled) - 2 + 2 (rejected)
+	if got := stockOf(sku); got != 12 {
+		t.Errorf("sender stock at the end: %v", got)
+	}
+
+	// branch products: the copy in the receiving branch keeps its own price until prices are synced
+	list := rows(h.json("GET", "/branch-products?branch_id="+target+"&q="+sku, nil, 200))
+	if len(list) != 1 {
+		t.Fatalf("expected the copy in the receiving branch, got %d rows", len(list))
+	}
+	bp := list[0].(map[string]any)
+	bpid := bp["id"].(string)
+	if bp["stock"].(float64) != 8 || bp["selling_price"].(float64) != 9000 {
+		t.Errorf("branch product: %v", bp)
+	}
+	same := data(h.json("PUT", "/branch-products/"+bpid, map[string]any{"selling_price": 9000}, 200))
+	if same["updated_at"] != bp["updated_at"] {
+		t.Error("an unchanged branch product got a new updated_at")
+	}
+	changed := data(h.json("PUT", "/branch-products/"+bpid, map[string]any{"selling_price": 9500, "is_available": false}, 200))
+	if changed["selling_price"].(float64) != 9500 || changed["is_available"] != false || changed["updated_at"] == bp["updated_at"] {
+		t.Errorf("changed branch product: %v", changed)
+	}
+	h.json("PUT", "/branch-products/"+bpid, map[string]any{"selling_price": nil}, 422)
+	h.json("PUT", "/branch-products/0190a1b2-0000-7000-8000-000000000000", map[string]any{"selling_price": 1}, 404)
+	h.json("POST", "/branch-products/sync-prices", map[string]any{}, 422)
+	if got := data(h.json("POST", "/branch-products/sync-prices", map[string]any{"branch_ids": []any{target}, "product_ids": []any{pid}}, 200)); got["updated"].(float64) != 1 {
+		t.Errorf("sync prices: %v", got)
+	}
+	if got := data(h.json("POST", "/branch-products/sync-prices", map[string]any{"branch_ids": []any{target}, "product_ids": []any{pid}}, 200)); got["updated"].(float64) != 0 {
+		t.Errorf("second sync should change nothing: %v", got)
+	}
+	if code, b, _ := h.call("GET", "/branch-products/export?format=csv&q="+sku, nil); code != 200 || !strings.Contains(string(b), sku) {
+		t.Errorf("branch product export: status %d", code)
+	}
+}

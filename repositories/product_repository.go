@@ -56,6 +56,23 @@ type ProductRepository interface {
 		sku string,
 		exceptProductID *uuid.UUID,
 	) (bool, error)
+	// FindBranchCopy returns the id of the product another branch keeps for a product of this store: the one
+	// copied from it or, failing that, the one with the same SKU. It is ErrProductNotFound when there is none.
+	FindBranchCopy(
+		ctx context.Context,
+		tx pgx.Tx,
+		branchID,
+		sourceProductID uuid.UUID,
+		sku string,
+	) (uuid.UUID, error)
+	// CopyProductToBranch creates the product in another branch, without stock, and returns the id of the copy.
+	CopyProductToBranch(
+		ctx context.Context,
+		tx pgx.Tx,
+		branchID,
+		sourceProductID uuid.UUID,
+		createdAt time.Time,
+	) (uuid.UUID, error)
 }
 
 type productRepository struct {
@@ -797,4 +814,94 @@ func (q *productRepository) SKUExists(
 		return false, err
 	}
 	return exists, nil
+}
+
+func (q *productRepository) FindBranchCopy(
+	ctx context.Context,
+	tx pgx.Tx,
+	branchID,
+	sourceProductID uuid.UUID,
+	sku string,
+) (uuid.UUID, error) {
+	ctxt := "ProductRepository-FindBranchCopy"
+	sb := pools.BuilderPool.Get()
+	defer pools.BuilderPool.Put(sb)
+	sb.Reset()
+	_, _ = sb.WriteString(`SELECT t.id
+	FROM products t
+	WHERE t.branch_id = $1
+		AND t.deleted_at IS NULL
+		AND (t.source_product_id = $2 OR LOWER(t.sku) = LOWER($3))
+	ORDER BY (t.source_product_id = $2) DESC NULLS LAST
+	LIMIT 1`)
+	var response uuid.UUID
+	err := tx.QueryRow(ctx, sb.String(), branchID, sourceProductID, sku).Scan(&response)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return response, models.ErrProductNotFound
+	}
+	if err != nil {
+		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
+	}
+	return response, err
+}
+
+func (q *productRepository) CopyProductToBranch(
+	ctx context.Context,
+	tx pgx.Tx,
+	branchID,
+	sourceProductID uuid.UUID,
+	createdAt time.Time,
+) (uuid.UUID, error) {
+	ctxt := "ProductRepository-CopyProductToBranch"
+	sb := pools.BuilderPool.Get()
+	defer pools.BuilderPool.Put(sb)
+	sb.Reset()
+	_, _ = sb.WriteString(`INSERT INTO products (
+		branch_id
+		, source_product_id
+		, name
+		, item_type
+		, sku
+		, barcode
+		, unit
+		, selling_price
+		, purchase_price
+		, price_type
+		, track_stock
+		, units
+		, variants
+		, show_in_online_store
+		, image_url
+		, created_at
+		, updated_at
+	)
+	SELECT $1
+		, t.id
+		, t.name
+		, t.item_type
+		, t.sku
+		, t.barcode
+		, t.unit
+		, t.selling_price
+		, t.purchase_price
+		, t.price_type
+		, TRUE
+		, t.units
+		, t.variants
+		, t.show_in_online_store
+		, t.image_url
+		, $3
+		, $3
+	FROM products t
+	WHERE t.id = $2
+	RETURNING id`)
+	var response uuid.UUID
+	err := tx.QueryRow(ctx, sb.String(), branchID, sourceProductID, createdAt).Scan(&response)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return response, models.ErrProductNotFound
+	}
+	if err != nil {
+		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
+	}
+	return response, err
 }

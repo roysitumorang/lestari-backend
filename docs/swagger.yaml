@@ -89,6 +89,77 @@ definitions:
         example: true
         type: boolean
     type: object
+  models.BranchPriceSyncRequest:
+    properties:
+      branch_ids:
+        description: branches that take over the selling prices of the head office
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b
+        items:
+          type: string
+        type: array
+      product_ids:
+        description: products to sync (ids of the head office or of the branch); all
+          products when empty
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        items:
+          type: string
+        type: array
+    type: object
+  models.BranchProduct:
+    properties:
+      branch_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b
+        type: string
+      branch_name:
+        example: Lestari Laguboti
+        type: string
+      category_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      is_available:
+        example: true
+        type: boolean
+      product_name:
+        example: Kopi Susu Gula Aren
+        type: string
+      purchase_price:
+        example: 9500
+        type: number
+      selling_price:
+        example: 18000
+        type: number
+      sku:
+        example: P000001
+        type: string
+      stock:
+        example: 24
+        type: number
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.BranchProductRequest:
+    properties:
+      is_available:
+        example: true
+        type: boolean
+      purchase_price:
+        example: 9500
+        minimum: 0
+        type: number
+      selling_price:
+        example: 18000
+        minimum: 0
+        type: number
+    type: object
   models.BulkDeleteRequest:
     properties:
       ids:
@@ -1325,6 +1396,157 @@ definitions:
         example: owner
         type: string
     type: object
+  models.StockTransfer:
+    properties:
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      direction:
+        description: out for the sending branch, in for the receiving one
+        enum:
+        - in
+        - out
+        example: out
+        type: string
+      from_branch:
+        $ref: '#/definitions/models.Reference'
+      from_branch_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      from_branch_name:
+        example: Lestari Balige
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      item_count:
+        example: 3
+        type: integer
+      items:
+        description: Items are the products sent; they come with a single stock transfer,
+          not with the list.
+        items:
+          $ref: '#/definitions/models.StockTransferItem'
+        type: array
+      note:
+        example: Weekly restock
+        type: string
+      reject_reason:
+        example: ""
+        type: string
+      requires_confirmation:
+        example: true
+        type: boolean
+      status:
+        enum:
+        - pending
+        - completed
+        - accepted
+        - rejected
+        example: pending
+        type: string
+      to_branch:
+        $ref: '#/definitions/models.Reference'
+      to_branch_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b
+        type: string
+      to_branch_name:
+        example: Lestari Laguboti
+        type: string
+      total_quantity:
+        example: 24
+        type: number
+      transfer_date:
+        example: "2026-11-08"
+        type: string
+      transfer_number:
+        example: TRF/20261108/0001
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.StockTransferAcceptRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/models.StockTransferReceivedItem'
+        type: array
+      note:
+        example: two cartons missing
+        type: string
+    type: object
+  models.StockTransferItem:
+    properties:
+      note:
+        example: fragile
+        type: string
+      product_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      product_name:
+        example: Kopi Susu Gula Aren
+        type: string
+      quantity:
+        example: 12
+        type: number
+      received_quantity:
+        description: null until the receiving branch confirms
+        example: 12
+        type: number
+      sku:
+        example: P000001
+        type: string
+    type: object
+  models.StockTransferItemRequest:
+    properties:
+      note:
+        example: fragile
+        type: string
+      product_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      quantity:
+        example: 12
+        type: number
+    type: object
+  models.StockTransferReceivedItem:
+    properties:
+      product_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      received_quantity:
+        example: 10
+        type: number
+    type: object
+  models.StockTransferRejectRequest:
+    properties:
+      reason:
+        example: Not ordered
+        type: string
+    type: object
+  models.StockTransferRequest:
+    properties:
+      items:
+        description: at least one product
+        items:
+          $ref: '#/definitions/models.StockTransferItemRequest'
+        type: array
+      note:
+        example: Weekly restock
+        type: string
+      requires_confirmation:
+        description: 'true: the stock arrives when the receiving branch accepts; false:
+          it arrives at once'
+        example: true
+        type: boolean
+      to_branch_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b
+        type: string
+      transfer_date:
+        example: "2026-11-08"
+        type: string
+    type: object
   models.Supplier:
     properties:
       address:
@@ -1420,6 +1642,12 @@ definitions:
         minimum: 0
         type: number
     type: object
+  models.UpdatedResponse:
+    properties:
+      updated:
+        example: 12
+        type: integer
+    type: object
 info:
   contact:
     name: Roy Situmorang
@@ -1429,6 +1657,295 @@ info:
   title: Lestari API
   version: 0.1.0
 paths:
+  /branch-products:
+    get:
+      description: The products of every branch of the store with the prices each
+        branch sells them at. Needs the business plugin.
+      parameters:
+      - description: search in product_name, sku
+        in: query
+        name: q
+        type: string
+      - description: only products of this branch
+        in: query
+        name: branch_id
+        type: string
+      - description: only products of this category
+        in: query
+        name: category_id
+        type: string
+      - description: sort field
+        enum:
+        - branch_id
+        - branch_name
+        - product_name
+        - sku
+        - category_id
+        - stock
+        - selling_price
+        - purchase_price
+        - is_available
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.BranchProduct'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "402":
+          description: Payment Required
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List branch products
+      tags:
+      - Branch products
+  /branch-products/{id}:
+    put:
+      description: Changes the prices or availability of a product in its branch.
+        Only the attributes present in the body are changed. When no value differs
+        from the stored one nothing is written and updated_at stays as it was.
+      parameters:
+      - description: product id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BranchProductRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.BranchProduct'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "402":
+          description: Payment Required
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a branch product
+      tags:
+      - Branch products
+  /branch-products/export:
+    get:
+      description: The rows of the list (same filters and sorting, up to 50,000) as
+        a file.
+      parameters:
+      - default: xlsx
+        description: file format
+        enum:
+        - xlsx
+        - csv
+        - pdf
+        in: query
+        name: format
+        type: string
+      - description: search in product_name, sku
+        in: query
+        name: q
+        type: string
+      - description: only products of this branch
+        in: query
+        name: branch_id
+        type: string
+      - description: only products of this category
+        in: query
+        name: category_id
+        type: string
+      - description: sort field
+        enum:
+        - branch_id
+        - branch_name
+        - product_name
+        - sku
+        - category_id
+        - stock
+        - selling_price
+        - purchase_price
+        - is_available
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - text/csv
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "402":
+          description: Payment Required
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Export branch products
+      tags:
+      - Branch products
+  /branch-products/sync-prices:
+    post:
+      description: Sets the selling price of the products of the chosen branches to
+        the price of the matching head-office product (the product it was copied from,
+        or the one with the same SKU). Products that already have that price are left
+        alone.
+      parameters:
+      - description: branches and, optionally, products
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BranchPriceSyncRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.UpdatedResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "402":
+          description: Payment Required
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Copy head-office prices to branches
+      tags:
+      - Branch products
   /cash-drawers:
     get:
       description: Cash drawers of the active branch.
@@ -6133,6 +6650,425 @@ paths:
       summary: Download the stock opname import template
       tags:
       - Stock opname
+  /stock-transfers:
+    get:
+      description: The transfers the active branch sends or receives.
+      parameters:
+      - description: search in transfer_number
+        in: query
+        name: q
+        type: string
+      - description: only rows with this status
+        enum:
+        - pending
+        - completed
+        - accepted
+        - rejected
+        in: query
+        name: status
+        type: string
+      - description: 'out: sent by the active branch; in: sent to it'
+        enum:
+        - in
+        - out
+        in: query
+        name: direction
+        type: string
+      - description: 'head_office: the head office takes part; branch: it does not'
+        enum:
+        - head_office
+        - branch
+        in: query
+        name: role
+        type: string
+      - description: transfers on or after this date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        type: string
+      - description: transfers on or before this date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        type: string
+      - description: sort field
+        enum:
+        - transfer_number
+        - transfer_date
+        - status
+        - total_quantity
+        - item_count
+        - from_branch.name
+        - to_branch.name
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.StockTransfer'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List stock transfers
+      tags:
+      - Stock transfers
+    post:
+      description: Sends stock from the active branch to another branch of the store.
+        The stock leaves the sender at once. Without confirmation it also arrives
+        at once (status completed) and a product the receiver does not have yet is
+        created there; with confirmation the transfer stays pending until the receiver
+        accepts or rejects it.
+      parameters:
+      - description: stock transfer
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.StockTransferRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.StockTransfer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a stock transfer
+      tags:
+      - Stock transfers
+  /stock-transfers/{id}:
+    delete:
+      description: Only the sending branch can delete, and only while the transfer
+        is pending. The stock goes back to the sender.
+      parameters:
+      - description: stock transfer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a stock transfer
+      tags:
+      - Stock transfers
+    get:
+      parameters:
+      - description: stock transfer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.StockTransfer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one stock transfer
+      tags:
+      - Stock transfers
+  /stock-transfers/{id}/accept:
+    post:
+      description: Only the receiving branch can accept, and only while the transfer
+        is pending. The received stock is added to the branch; a quantity that did
+        not arrive goes back to the sender.
+      parameters:
+      - description: stock transfer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: quantities received, when they differ from what was sent
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/models.StockTransferAcceptRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.StockTransfer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Accept a stock transfer
+      tags:
+      - Stock transfers
+  /stock-transfers/{id}/print:
+    get:
+      parameters:
+      - description: stock transfer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Print a stock transfer note
+      tags:
+      - Stock transfers
+  /stock-transfers/{id}/reject:
+    post:
+      description: Only the receiving branch can reject, and only while the transfer
+        is pending. The stock goes back to the sender.
+      parameters:
+      - description: stock transfer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: why it is rejected
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.StockTransferRejectRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.StockTransfer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "403":
+          description: Forbidden
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Reject a stock transfer
+      tags:
+      - Stock transfers
   /suppliers:
     get:
       description: Suppliers of the active branch.

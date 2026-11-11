@@ -12,16 +12,8 @@ import (
 	"github.com/roysitumorang/lestari-backend/export"
 	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/middlewares"
 	"github.com/roysitumorang/lestari-backend/repositories"
 )
-
-// businessOnly returns an add function whose routes require the business plugin.
-func (a *API) businessOnly() func(method, path string, h fiber.Handler) {
-	return func(method, path string, h fiber.Handler) {
-		a.add(method, path, middlewares.RequirePlugin("business"), h)
-	}
-}
 
 func (a *API) registerContacts() {
 	a.addH("POST", "/customers/:id/points", a.adjustPoints)

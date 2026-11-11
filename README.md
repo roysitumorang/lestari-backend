@@ -90,10 +90,17 @@ transfers, debts, billing, reports) are explicit handlers that run in transactio
 ## Conversion status
 
 The API is being moved from one generic CRUD engine to explicit model / sanitizer / repository / service / controller
-files per entity. Converted so far: taxes, categories, cash drawers, suppliers, customer types, customers, cash in &
-out, discounts, fees, payment methods, promotions and commissions (72 operations, all with Swagger examples).
-Everything else is still served by `internal/api` and `internal/crud` and behaves as before; both packages are
-deleted when the last group is converted.
+files per entity. Converted so far (114 operations, all with Swagger examples):
+
+- master data: taxes, categories, cash drawers, suppliers, customer types, customers, cash in & out, discounts, fees,
+  payment methods, promotions, commissions;
+- products and stock: products (SKU, duplicate, barcodes, labels), branch products, stock levels (adjustments,
+  history, import, recalculation), stock opname, stock transfers.
+
+Still served by `internal/api` and `internal/crud`, behaving as before: sales and purchases with their returns and
+debts, branches, staff, online store, PPOB, account, settings, billing, dashboard, reports. Both packages are deleted
+when the last group is converted. Until then the remaining sale and purchase handlers change stock through the old
+`productStock` helper; converted code uses `StockRepository.ChangeStock`, the single place stock changes.
 
 ## Languages
 

@@ -146,7 +146,6 @@ func (a *API) registerAll() {
 	a.registerReturns()
 	a.registerReports()
 	a.registerBranches()
-	a.registerTransfers()
 	a.registerSettings()
 	a.registerStaff()
 	a.registerOnlineCatalog()

@@ -144,6 +144,14 @@ func (q *Service) NewApp(log *slog.Logger) *fiber.App {
 		q.StockOpnameService,
 		q.ProductService,
 	).Mount(v1.Group("/stock-opnames"))
+	controllers.NewStockTransferController(
+		q.AuthService,
+		q.StockTransferService,
+	).Mount(v1.Group("/stock-transfers"))
+	controllers.NewBranchProductController(
+		q.AuthService,
+		q.BranchProductService,
+	).Mount(v1.Group("/branch-products"))
 	// handlers that still live in internal/api (being moved to controllers, one group at a time)
 	q.API.Mount(v1)
 	return app

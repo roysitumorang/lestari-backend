@@ -20,6 +20,484 @@
     },
     "basePath": "/api/v1",
     "paths": {
+        "/branch-products": {
+            "get": {
+                "description": "The products of every branch of the store with the prices each branch sells them at. Needs the business plugin.",
+                "tags": [
+                    "Branch products"
+                ],
+                "summary": "List branch products",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "search in product_name, sku",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only products of this branch",
+                        "name": "branch_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only products of this category",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "branch_id",
+                            "branch_name",
+                            "product_name",
+                            "sku",
+                            "category_id",
+                            "stock",
+                            "selling_price",
+                            "purchase_price",
+                            "is_available",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "description": "sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "sort direction",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "page, from 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "type": "integer",
+                        "default": 25,
+                        "description": "rows per page",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/helper.Pagination"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "rows": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/models.BranchProduct"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "402": {
+                        "description": "Payment Required",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/branch-products/export": {
+            "get": {
+                "description": "The rows of the list (same filters and sorting, up to 50,000) as a file.",
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "text/csv",
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Branch products"
+                ],
+                "summary": "Export branch products",
+                "parameters": [
+                    {
+                        "enum": [
+                            "xlsx",
+                            "csv",
+                            "pdf"
+                        ],
+                        "type": "string",
+                        "default": "xlsx",
+                        "description": "file format",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search in product_name, sku",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only products of this branch",
+                        "name": "branch_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only products of this category",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "branch_id",
+                            "branch_name",
+                            "product_name",
+                            "sku",
+                            "category_id",
+                            "stock",
+                            "selling_price",
+                            "purchase_price",
+                            "is_available",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "description": "sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "sort direction",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "402": {
+                        "description": "Payment Required",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/branch-products/sync-prices": {
+            "post": {
+                "description": "Sets the selling price of the products of the chosen branches to the price of the matching head-office product (the product it was copied from, or the one with the same SKU). Products that already have that price are left alone.",
+                "tags": [
+                    "Branch products"
+                ],
+                "summary": "Copy head-office prices to branches",
+                "parameters": [
+                    {
+                        "description": "branches and, optionally, products",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BranchPriceSyncRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.UpdatedResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "402": {
+                        "description": "Payment Required",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/branch-products/{id}": {
+            "put": {
+                "description": "Changes the prices or availability of a product in its branch. Only the attributes present in the body are changed. When no value differs from the stored one nothing is written and updated_at stays as it was.",
+                "tags": [
+                    "Branch products"
+                ],
+                "summary": "Update a branch product",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "product id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "attributes to change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BranchProductRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.BranchProduct"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "402": {
+                        "description": "Payment Required",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/cash-drawers": {
             "get": {
                 "description": "Cash drawers of the active branch.",
@@ -8183,6 +8661,740 @@
                 }
             }
         },
+        "/stock-transfers": {
+            "get": {
+                "description": "The transfers the active branch sends or receives.",
+                "tags": [
+                    "Stock transfers"
+                ],
+                "summary": "List stock transfers",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "search in transfer_number",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "pending",
+                            "completed",
+                            "accepted",
+                            "rejected"
+                        ],
+                        "type": "string",
+                        "description": "only rows with this status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "in",
+                            "out"
+                        ],
+                        "type": "string",
+                        "description": "out: sent by the active branch; in: sent to it",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "head_office",
+                            "branch"
+                        ],
+                        "type": "string",
+                        "description": "head_office: the head office takes part; branch: it does not",
+                        "name": "role",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "transfers on or after this date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "transfers on or before this date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "transfer_number",
+                            "transfer_date",
+                            "status",
+                            "total_quantity",
+                            "item_count",
+                            "from_branch.name",
+                            "to_branch.name",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "description": "sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "sort direction",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "page, from 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "type": "integer",
+                        "default": 25,
+                        "description": "rows per page",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/helper.Pagination"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "rows": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/models.StockTransfer"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Sends stock from the active branch to another branch of the store. The stock leaves the sender at once. Without confirmation it also arrives at once (status completed) and a product the receiver does not have yet is created there; with confirmation the transfer stays pending until the receiver accepts or rejects it.",
+                "tags": [
+                    "Stock transfers"
+                ],
+                "summary": "Create a stock transfer",
+                "parameters": [
+                    {
+                        "description": "stock transfer",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.StockTransferRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StockTransfer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-transfers/{id}": {
+            "get": {
+                "tags": [
+                    "Stock transfers"
+                ],
+                "summary": "Get one stock transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock transfer id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StockTransfer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Only the sending branch can delete, and only while the transfer is pending. The stock goes back to the sender.",
+                "tags": [
+                    "Stock transfers"
+                ],
+                "summary": "Delete a stock transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock transfer id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-transfers/{id}/accept": {
+            "post": {
+                "description": "Only the receiving branch can accept, and only while the transfer is pending. The received stock is added to the branch; a quantity that did not arrive goes back to the sender.",
+                "tags": [
+                    "Stock transfers"
+                ],
+                "summary": "Accept a stock transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock transfer id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "quantities received, when they differ from what was sent",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/models.StockTransferAcceptRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StockTransfer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-transfers/{id}/print": {
+            "get": {
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Stock transfers"
+                ],
+                "summary": "Print a stock transfer note",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock transfer id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-transfers/{id}/reject": {
+            "post": {
+                "description": "Only the receiving branch can reject, and only while the transfer is pending. The stock goes back to the sender.",
+                "tags": [
+                    "Stock transfers"
+                ],
+                "summary": "Reject a stock transfer",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock transfer id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "why it is rejected",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.StockTransferRejectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StockTransfer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/suppliers": {
             "get": {
                 "description": "Suppliers of the active branch.",
@@ -9683,6 +10895,103 @@
                 "available": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "models.BranchPriceSyncRequest": {
+            "type": "object",
+            "properties": {
+                "branch_ids": {
+                    "description": "branches that take over the selling prices of the head office",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b"
+                    ]
+                },
+                "product_ids": {
+                    "description": "products to sync (ids of the head office or of the branch); all products when empty",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                    ]
+                }
+            }
+        },
+        "models.BranchProduct": {
+            "type": "object",
+            "properties": {
+                "branch_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b"
+                },
+                "branch_name": {
+                    "type": "string",
+                    "example": "Lestari Laguboti"
+                },
+                "category_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "is_available": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Kopi Susu Gula Aren"
+                },
+                "purchase_price": {
+                    "type": "number",
+                    "example": 9500
+                },
+                "selling_price": {
+                    "type": "number",
+                    "example": 18000
+                },
+                "sku": {
+                    "type": "string",
+                    "example": "P000001"
+                },
+                "stock": {
+                    "type": "number",
+                    "example": 24
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                }
+            }
+        },
+        "models.BranchProductRequest": {
+            "type": "object",
+            "properties": {
+                "is_available": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "purchase_price": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 9500
+                },
+                "selling_price": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 18000
                 }
             }
         },
@@ -11366,6 +12675,212 @@
                 }
             }
         },
+        "models.StockTransfer": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                },
+                "direction": {
+                    "description": "out for the sending branch, in for the receiving one",
+                    "type": "string",
+                    "enum": [
+                        "in",
+                        "out"
+                    ],
+                    "example": "out"
+                },
+                "from_branch": {
+                    "$ref": "#/definitions/models.Reference"
+                },
+                "from_branch_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "from_branch_name": {
+                    "type": "string",
+                    "example": "Lestari Balige"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "item_count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "items": {
+                    "description": "Items are the products sent; they come with a single stock transfer, not with the list.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.StockTransferItem"
+                    }
+                },
+                "note": {
+                    "type": "string",
+                    "example": "Weekly restock"
+                },
+                "reject_reason": {
+                    "type": "string",
+                    "example": ""
+                },
+                "requires_confirmation": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "completed",
+                        "accepted",
+                        "rejected"
+                    ],
+                    "example": "pending"
+                },
+                "to_branch": {
+                    "$ref": "#/definitions/models.Reference"
+                },
+                "to_branch_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b"
+                },
+                "to_branch_name": {
+                    "type": "string",
+                    "example": "Lestari Laguboti"
+                },
+                "total_quantity": {
+                    "type": "number",
+                    "example": 24
+                },
+                "transfer_date": {
+                    "type": "string",
+                    "example": "2026-11-08"
+                },
+                "transfer_number": {
+                    "type": "string",
+                    "example": "TRF/20261108/0001"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                }
+            }
+        },
+        "models.StockTransferAcceptRequest": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.StockTransferReceivedItem"
+                    }
+                },
+                "note": {
+                    "type": "string",
+                    "example": "two cartons missing"
+                }
+            }
+        },
+        "models.StockTransferItem": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string",
+                    "example": "fragile"
+                },
+                "product_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Kopi Susu Gula Aren"
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 12
+                },
+                "received_quantity": {
+                    "description": "null until the receiving branch confirms",
+                    "type": "number",
+                    "example": 12
+                },
+                "sku": {
+                    "type": "string",
+                    "example": "P000001"
+                }
+            }
+        },
+        "models.StockTransferItemRequest": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string",
+                    "example": "fragile"
+                },
+                "product_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 12
+                }
+            }
+        },
+        "models.StockTransferReceivedItem": {
+            "type": "object",
+            "properties": {
+                "product_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "received_quantity": {
+                    "type": "number",
+                    "example": 10
+                }
+            }
+        },
+        "models.StockTransferRejectRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "example": "Not ordered"
+                }
+            }
+        },
+        "models.StockTransferRequest": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "at least one product",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.StockTransferItemRequest"
+                    }
+                },
+                "note": {
+                    "type": "string",
+                    "example": "Weekly restock"
+                },
+                "requires_confirmation": {
+                    "description": "true: the stock arrives when the receiving branch accepts; false: it arrives at once",
+                    "type": "boolean",
+                    "example": true
+                },
+                "to_branch_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b"
+                },
+                "transfer_date": {
+                    "type": "string",
+                    "example": "2026-11-08"
+                }
+            }
+        },
         "models.Supplier": {
             "type": "object",
             "properties": {
@@ -11493,6 +13008,15 @@
                     "maximum": 100,
                     "minimum": 0,
                     "example": 11
+                }
+            }
+        },
+        "models.UpdatedResponse": {
+            "type": "object",
+            "properties": {
+                "updated": {
+                    "type": "integer",
+                    "example": 12
                 }
             }
         }
