@@ -165,18 +165,23 @@ func (q *taxRepository) CreateTax(
 	request *models.Tax,
 ) (*models.Tax, error) {
 	ctxt := "TaxRepository-CreateTax"
+	sb := pools.BuilderPool.Get()
+	defer pools.BuilderPool.Put(sb)
+	sb.Reset()
+	_, _ = sb.WriteString(`INSERT INTO taxes (
+		branch_id
+		, name
+		, rate
+		, is_inclusive
+		, is_active
+		, created_at
+		, updated_at
+	) VALUES ($1, $2, $3, $4, $5, $6, $7)
+	RETURNING `)
+	_, _ = sb.WriteString(taxColumns)
 	response, err := scanTax(tx.QueryRow(
 		ctx,
-		`INSERT INTO taxes (
-			branch_id
-			, name
-			, rate
-			, is_inclusive
-			, is_active
-			, created_at
-			, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING `+taxColumns,
+		sb.String(),
 		request.BranchID,
 		request.Name,
 		request.Rate,
@@ -201,13 +206,21 @@ func (q *taxRepository) UpdateTax(
 	request *models.Tax,
 ) (*models.Tax, error) {
 	ctxt := "TaxRepository-UpdateTax"
-	response, err := scanTax(tx.QueryRow(
-		ctx,
-		`SELECT `+taxColumns+`
+	sb := pools.BuilderPool.Get()
+	defer pools.BuilderPool.Put(sb)
+	sb.Reset()
+	_, _ = fmt.Fprintf(
+		sb,
+		`SELECT %s
 		FROM taxes
 		WHERE id = $1
 			AND branch_id = $2
 		FOR NO KEY UPDATE`,
+		taxColumns,
+	)
+	response, err := scanTax(tx.QueryRow(
+		ctx,
+		sb.String(),
 		request.ID,
 		request.BranchID,
 	))
@@ -220,8 +233,6 @@ func (q *taxRepository) UpdateTax(
 	}
 	var params []any
 	var n int
-	sb := pools.BuilderPool.Get()
-	defer pools.BuilderPool.Put(sb)
 	sb.Reset()
 	_, _ = sb.WriteString("UPDATE taxes SET")
 	if response.Name != request.Name {

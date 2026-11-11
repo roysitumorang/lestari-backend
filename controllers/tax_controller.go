@@ -86,8 +86,10 @@ func (q *taxController) V1Index(c fiber.Ctx) error {
 //	@Router		/taxes/{id} [get]
 func (q *taxController) V1Show(c fiber.Ctx) error {
 	ctx := c.Context()
+	ctxt := "TaxController-V1Show"
 	taxID, err := sanitizers.ParamID(c, "id", "Tax")
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrParamID")
 		return err
 	}
 	response, err := q.taxService.FindTax(
@@ -97,6 +99,7 @@ func (q *taxController) V1Show(c fiber.Ctx) error {
 			WithTaxIDs(taxID),
 	)
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrFindTax")
 		return taxError(err)
 	}
 	return helper.OK(c, response)
@@ -117,6 +120,7 @@ func (q *taxController) V1Create(c fiber.Ctx) error {
 	ctxt := "TaxController-V1Create"
 	request, err := sanitizers.ValidateTax(c, true)
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrValidateTax")
 		return err
 	}
 	now := time.Now()
@@ -161,10 +165,12 @@ func (q *taxController) V1Update(c fiber.Ctx) error {
 	ctxt := "TaxController-V1Update"
 	taxID, err := sanitizers.ParamID(c, "id", "Tax")
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrParamID")
 		return err
 	}
 	request, err := sanitizers.ValidateTax(c, false)
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrValidateTax")
 		return err
 	}
 	tax, err := q.taxService.FindTax(
@@ -174,6 +180,7 @@ func (q *taxController) V1Update(c fiber.Ctx) error {
 			WithTaxIDs(taxID),
 	)
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrFindTax")
 		return taxError(err)
 	}
 	tx, err := repositories.BeginTx(ctx)
@@ -185,6 +192,7 @@ func (q *taxController) V1Update(c fiber.Ctx) error {
 	request.Apply(tax).UpdatedAt = time.Now()
 	response, err := q.taxService.UpdateTax(ctx, tx, tax)
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrUpdateTax")
 		return taxError(err)
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -209,6 +217,7 @@ func (q *taxController) V1Delete(c fiber.Ctx) error {
 	ctxt := "TaxController-V1Delete"
 	taxID, err := sanitizers.ParamID(c, "id", "Tax")
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrParamID")
 		return err
 	}
 	tx, err := repositories.BeginTx(ctx)
@@ -224,6 +233,7 @@ func (q *taxController) V1Delete(c fiber.Ctx) error {
 			WithBranchIDs(currentBranchID(c)).
 			WithTaxIDs(taxID),
 	); err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrDeleteTaxes")
 		return taxError(err)
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -254,6 +264,7 @@ func (q *taxController) V1BulkDelete(c fiber.Ctx) error {
 	ctxt := "TaxController-V1BulkDelete"
 	taxIDs, err := sanitizers.DeleteTaxes(c)
 	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrDeleteTaxes")
 		return err
 	}
 	tx, err := repositories.BeginTx(ctx)
@@ -269,6 +280,7 @@ func (q *taxController) V1BulkDelete(c fiber.Ctx) error {
 			WithBranchIDs(currentBranchID(c)).
 			WithTaxIDs(taxIDs...),
 	); err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrDeleteTaxes")
 		return taxError(err)
 	}
 	if err = tx.Commit(ctx); err != nil {
