@@ -15,10 +15,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/roysitumorang/lestari-backend/internal/auth"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
+	"github.com/roysitumorang/lestari-backend/middlewares"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 type Kind int
@@ -51,8 +51,8 @@ type Ref struct {
 }
 
 // checkRefs verifies that every referenced id belongs to the caller's tenant.
-func (r *Resource) checkRefs(ctx context.Context, q db.Querier, p *httpx.Principal, vals map[string]any) error {
-	v := &httpx.Validation{}
+func (r *Resource) checkRefs(ctx context.Context, q repositories.Querier, p *helper.Principal, vals map[string]any) error {
+	v := &helper.Validation{}
 	for _, f := range r.Fields {
 		if f.Ref == nil {
 			continue
@@ -109,13 +109,13 @@ type Filter struct {
 	SQL   string
 	Cast  func(string) (any, bool) // optional; return false to ignore the value
 	// Build replaces SQL when the condition depends on the caller (e.g. the active branch).
-	Build func(b *Builder, p *httpx.Principal, value string) string
+	Build func(b *Builder, p *helper.Principal, value string) string
 }
 
 // Ctx is passed to hooks.
 type Ctx struct {
 	Fiber fiber.Ctx
-	P     *httpx.Principal
+	P     *helper.Principal
 	Tx    pgx.Tx
 	Body  map[string]any
 }
@@ -128,9 +128,9 @@ type Resource struct {
 	Fields   []Field
 
 	// Scope restricts rows to the caller's tenant. Default: t.branch_id = active branch.
-	Scope func(b *Builder, p *httpx.Principal) string
+	Scope func(b *Builder, p *helper.Principal) string
 	// InsertScope returns columns set on insert from the principal. Default: branch_id.
-	InsertScope func(p *httpx.Principal) map[string]any
+	InsertScope func(p *helper.Principal) map[string]any
 
 	Where        string // fixed extra condition, e.g. "t.kind = 'payable'"
 	SoftDelete   bool
@@ -142,9 +142,9 @@ type Resource struct {
 	BeforeWrite  func(ctx context.Context, h *Ctx, vals map[string]any, id string) error // mutate column values
 	AfterWrite   func(ctx context.Context, h *Ctx, id string, created bool) error        // child rows etc.
 	BeforeDelete func(ctx context.Context, h *Ctx, id string) error
-	Detail       func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error
+	Detail       func(ctx context.Context, q repositories.Querier, p *helper.Principal, row map[string]any) error
 	// Post adjusts rows returned by list and get, e.g. values relative to the caller.
-	Post func(p *httpx.Principal, row map[string]any)
+	Post func(p *helper.Principal, row map[string]any)
 }
 
 type Engine struct {
@@ -167,14 +167,14 @@ func (r *Resource) idName() string {
 	return "id"
 }
 
-func (r *Resource) scope(b *Builder, p *httpx.Principal) string {
+func (r *Resource) scope(b *Builder, p *helper.Principal) string {
 	if r.Scope != nil {
 		return r.Scope(b, p)
 	}
 	return "t.branch_id = " + b.Add(p.BranchID)
 }
 
-func (r *Resource) insertScope(p *httpx.Principal) map[string]any {
+func (r *Resource) insertScope(p *helper.Principal) map[string]any {
 	if r.InsertScope != nil {
 		return r.InsertScope(p)
 	}
@@ -213,7 +213,7 @@ func (r *Resource) selectList() string {
 	return strings.Join(cols, ", ")
 }
 
-func (r *Resource) baseWhere(b *Builder, p *httpx.Principal) []string {
+func (r *Resource) baseWhere(b *Builder, p *helper.Principal) []string {
 	w := []string{r.scope(b, p)}
 	if r.SoftDelete {
 		w = append(w, "t.deleted_at IS NULL")
@@ -260,7 +260,7 @@ func castExpr(k Kind) string {
 }
 
 // listWhere applies search and filters from the query string.
-func (r *Resource) listWhere(c fiber.Ctx, b *Builder, p *httpx.Principal) []string {
+func (r *Resource) listWhere(c fiber.Ctx, b *Builder, p *helper.Principal) []string {
 	w := r.baseWhere(b, p)
 	if q := strings.TrimSpace(c.Query("q")); q != "" {
 		ph := b.Add("%" + q + "%")
@@ -355,8 +355,8 @@ func (r *Resource) orderBy(c fiber.Ctx) string {
 
 func (e *Engine) List(r *Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		p := httpx.P(c)
-		pg := httpx.Paging(c, 25)
+		p := helper.P(c)
+		pg := helper.Paging(c, 25)
 		b := &Builder{}
 		where := strings.Join(r.listWhere(c, b, p), " AND ")
 		var total int
@@ -366,47 +366,47 @@ func (e *Engine) List(r *Resource) fiber.Handler {
 		sql := "SELECT " + r.selectList() + " FROM " + r.Table + " t WHERE " + where + " ORDER BY " + r.orderBy(c) +
 			" LIMIT " + strconv.Itoa(pg.PerPage) + " OFFSET " + strconv.Itoa(pg.Offset)
 		if r.Post != nil {
-			rows, err := db.JSONRows(c.Context(), e.DB, sql, b.Args...)
+			rows, err := repositories.JSONRows(c.Context(), e.DB, sql, b.Args...)
 			if err != nil {
 				return err
 			}
 			for _, row := range rows {
 				r.Post(p, row)
 			}
-			return httpx.List(c, rows, httpx.NewMeta(pg, total))
+			return helper.List(c, rows, helper.NewMeta(pg, total))
 		}
-		raw, err := db.JSONRaw(c.Context(), e.DB, sql, b.Args...)
+		raw, err := repositories.JSONRaw(c.Context(), e.DB, sql, b.Args...)
 		if err != nil {
 			return err
 		}
-		return httpx.List(c, raw, httpx.NewMeta(pg, total))
+		return helper.List(c, raw, helper.NewMeta(pg, total))
 	}
 }
 
 // Rows returns all rows matching the request's filters (used by exports).
 func (e *Engine) Rows(c fiber.Ctx, r *Resource, limit int) ([]map[string]any, error) {
 	b := &Builder{}
-	where := strings.Join(r.listWhere(c, b, httpx.P(c)), " AND ")
+	where := strings.Join(r.listWhere(c, b, helper.P(c)), " AND ")
 	sql := "SELECT " + r.selectList() + " FROM " + r.Table + " t WHERE " + where + " ORDER BY " + r.orderBy(c) + " LIMIT " + strconv.Itoa(limit)
-	rows, err := db.JSONRows(c.Context(), e.DB, sql, b.Args...)
+	rows, err := repositories.JSONRows(c.Context(), e.DB, sql, b.Args...)
 	if err == nil && r.Post != nil {
 		for _, row := range rows {
-			r.Post(httpx.P(c), row)
+			r.Post(helper.P(c), row)
 		}
 	}
 	return rows, err
 }
 
 // Fetch loads one row (with Detail enrichment) or returns a 404 error.
-func (e *Engine) Fetch(ctx context.Context, q db.Querier, r *Resource, p *httpx.Principal, id string) (map[string]any, error) {
+func (e *Engine) Fetch(ctx context.Context, q repositories.Querier, r *Resource, p *helper.Principal, id string) (map[string]any, error) {
 	b := &Builder{}
 	where := append(r.baseWhere(b, p), "t.id = "+b.Add(id)+"::uuid")
-	row, err := db.JSONRow(ctx, q, "SELECT "+r.selectList()+" FROM "+r.Table+" t WHERE "+strings.Join(where, " AND "), b.Args...)
+	row, err := repositories.JSONRow(ctx, q, "SELECT "+r.selectList()+" FROM "+r.Table+" t WHERE "+strings.Join(where, " AND "), b.Args...)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
-		return nil, httpx.NotFound(r.Singular)
+		return nil, helper.NotFound(r.Singular)
 	}
 	if r.Detail != nil {
 		if err := r.Detail(ctx, q, p, row); err != nil {
@@ -421,21 +421,21 @@ func (e *Engine) Fetch(ctx context.Context, q db.Querier, r *Resource, p *httpx.
 
 func (e *Engine) Get(r *Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		row, err := e.Fetch(c.Context(), e.DB, r, httpx.P(c), id)
+		row, err := e.Fetch(c.Context(), e.DB, r, helper.P(c), id)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, row)
+		return helper.OK(c, row)
 	}
 }
 
 func (e *Engine) Create(r *Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		body, err := httpx.Body(c)
+		body, err := helper.Body(c)
 		if err != nil {
 			return err
 		}
@@ -443,17 +443,17 @@ func (e *Engine) Create(r *Resource) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		return httpx.Created(c, row)
+		return helper.Created(c, row)
 	}
 }
 
 func (e *Engine) Update(r *Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		body, err := httpx.Body(c)
+		body, err := helper.Body(c)
 		if err != nil {
 			return err
 		}
@@ -461,14 +461,14 @@ func (e *Engine) Update(r *Resource) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, row)
+		return helper.OK(c, row)
 	}
 }
 
 // Values validates a body against the resource fields and returns column values.
 // On update (id != "") only attributes present in the body are written; send null to clear one.
 func (r *Resource) Values(body map[string]any, id string) (map[string]any, error) {
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	vals := map[string]any{}
 	for _, f := range r.Fields {
 		if !f.writable() {
@@ -481,7 +481,7 @@ func (r *Resource) Values(body map[string]any, id string) (map[string]any, error
 		if f.Kind == Password || f.Kind == PIN {
 			s, _ := raw.(string)
 			if f.Kind == Password {
-				plain, ok := httpx.DecodeBase64Password(s)
+				plain, ok := helper.DecodeBase64Password(s)
 				if !ok {
 					v.Add(f.Name, "Send the password base64-encoded.")
 					continue
@@ -498,7 +498,7 @@ func (r *Resource) Values(body map[string]any, id string) (map[string]any, error
 				v.Add(f.Name, "Use at least 6 characters.")
 				continue
 			}
-			h, err := auth.HashPassword(s)
+			h, err := middlewares.HashPassword(s)
 			if err != nil {
 				return nil, err
 			}
@@ -538,7 +538,7 @@ func (e *Engine) Save(c fiber.Ctx, r *Resource, body map[string]any, id string) 
 }
 
 func (e *Engine) SaveCtx(ctx context.Context, c fiber.Ctx, r *Resource, body map[string]any, id string) (map[string]any, error) {
-	p := httpx.P(c)
+	p := helper.P(c)
 	vals, err := r.Values(body, id)
 	if err != nil {
 		return nil, err
@@ -615,16 +615,16 @@ func (e *Engine) SaveCtx(ctx context.Context, c fiber.Ctx, r *Resource, body map
 
 func mapWriteErr(r *Resource, err error) error {
 	switch {
-	case db.IsUniqueViolation(err):
-		return httpx.Conflict("A {item} with the same code or name already exists.", "item", i18n.Tr(r.Singular))
-	case db.IsForeignKeyViolation(err):
-		return httpx.Invalid("id", "A referenced record does not exist.")
+	case repositories.IsUniqueViolation(err):
+		return helper.Conflict("A {item} with the same code or name already exists.", "item", i18n.Tr(r.Singular))
+	case repositories.IsForeignKeyViolation(err):
+		return helper.Invalid("id", "A referenced record does not exist.")
 	}
 	return err
 }
 
 func (e *Engine) deleteOne(ctx context.Context, c fiber.Ctx, tx pgx.Tx, r *Resource, id string) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	if _, err := e.Fetch(ctx, tx, r, p, id); err != nil {
 		return err
 	}
@@ -639,22 +639,22 @@ func (e *Engine) deleteOne(ctx context.Context, c fiber.Ctx, tx pgx.Tx, r *Resou
 	} else {
 		_, err = tx.Exec(ctx, "DELETE FROM "+r.Table+" WHERE id = $1", id)
 	}
-	if db.IsForeignKeyViolation(err) {
-		return httpx.Conflict("This {item} is still used by other records.", "item", i18n.Tr(r.Singular))
+	if repositories.IsForeignKeyViolation(err) {
+		return helper.Conflict("This {item} is still used by other records.", "item", i18n.Tr(r.Singular))
 	}
 	return err
 }
 
 func (e *Engine) Delete(r *Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
 		if err := pgx.BeginFunc(c.Context(), e.DB, func(tx pgx.Tx) error { return e.deleteOne(c.Context(), c, tx, r, id) }); err != nil {
 			return err
 		}
-		return httpx.NoContent(c)
+		return helper.NoContent(c)
 	}
 }
 
@@ -663,16 +663,16 @@ func (e *Engine) BulkDelete(r *Resource) fiber.Handler {
 		var in struct {
 			IDs []string `json:"ids"`
 		}
-		if err := httpx.Decode(c, &in); err != nil {
+		if err := helper.Decode(c, &in); err != nil {
 			return err
 		}
 		if len(in.IDs) == 0 {
-			return httpx.Invalid("ids", "Choose at least one item.")
+			return helper.Invalid("ids", "Choose at least one item.")
 		}
 		err := pgx.BeginFunc(c.Context(), e.DB, func(tx pgx.Tx) error {
 			for _, id := range in.IDs {
-				if !httpx.IsUUID(id) {
-					return httpx.Invalid("ids", "Each id must be a UUID.")
+				if !helper.IsUUID(id) {
+					return helper.Invalid("ids", "Each id must be a UUID.")
 				}
 				if err := e.deleteOne(c.Context(), c, tx, r, id); err != nil {
 					return err
@@ -683,7 +683,7 @@ func (e *Engine) BulkDelete(r *Resource) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"deleted": len(in.IDs)})
+		return helper.OK(c, fiber.Map{"deleted": len(in.IDs)})
 	}
 }
 
@@ -831,7 +831,7 @@ func coerce(f Field, raw any) (any, i18n.Text) {
 	case UUID:
 		s, ok := raw.(string)
 		s = strings.ToLower(strings.TrimSpace(s))
-		if !ok || !httpx.IsUUID(s) {
+		if !ok || !helper.IsUUID(s) {
 			return nil, i18n.Tr("Must be a UUID.")
 		}
 		return s, i18n.Text{}
@@ -844,7 +844,7 @@ func coerce(f Field, raw any) (any, i18n.Text) {
 		for _, it := range arr {
 			s, _ := it.(string)
 			s = strings.ToLower(strings.TrimSpace(s))
-			if !httpx.IsUUID(s) {
+			if !helper.IsUUID(s) {
 				return nil, i18n.Tr("Must be a list of UUIDs.")
 			}
 			out = append(out, s)

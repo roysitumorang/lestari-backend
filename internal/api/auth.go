@@ -8,9 +8,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/roysitumorang/lestari-backend/internal/auth"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/middlewares"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 func (a *API) registerPublic() {
@@ -33,15 +33,15 @@ func (a *API) login(c fiber.Ctx) error {
 		RememberMe bool   `json:"remember_me"`
 		OTP        string `json:"otp"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	if strings.TrimSpace(in.Email) == "" {
 		v.Add("email", "Required")
 	}
 	encoded := in.Password != ""
-	httpx.Passwords(v, map[string]*string{"password": &in.Password})
+	helper.Passwords(v, map[string]*string{"password": &in.Password})
 	if in.Password == "" && !encoded {
 		v.Add("password", "Required")
 	}
@@ -58,25 +58,25 @@ func (a *API) login(c fiber.Ctx) error {
 	err := a.DB.QueryRow(c.Context(), `SELECT id, store_id, password_hash, status, two_factor_enabled, two_factor_secret, recovery_codes
 		FROM users WHERE lower(email) = lower($1) AND deleted_at IS NULL`, strings.TrimSpace(in.Email)).
 		Scan(&id, &storeID, &hash, &status, &tfaOn, &tfaSecret, &recovery)
-	if err != nil || !auth.CheckPassword(hash, in.Password) {
-		return httpx.Unauthorized("invalid_credentials", "Email or password is incorrect.")
+	if err != nil || !middlewares.CheckPassword(hash, in.Password) {
+		return helper.Unauthorized("invalid_credentials", "Email or password is incorrect.")
 	}
 	if status == "disabled" {
-		return httpx.Forbidden("This account has been disabled.")
+		return helper.Forbidden("This account has been disabled.")
 	}
 	if tfaOn && tfaSecret != nil {
 		if in.OTP == "" {
-			return httpx.Unauthorized("two_factor_required", "Enter the code from your authenticator app.")
+			return helper.Unauthorized("two_factor_required", "Enter the code from your authenticator app.")
 		}
-		if !auth.VerifyTOTP(*tfaSecret, in.OTP) {
+		if !middlewares.VerifyTOTP(*tfaSecret, in.OTP) {
 			used := -1
 			for i, rc := range recovery {
-				if rc == auth.SHA256(strings.TrimSpace(in.OTP)) {
+				if rc == middlewares.SHA256(strings.TrimSpace(in.OTP)) {
 					used = i
 				}
 			}
 			if used < 0 {
-				return httpx.Unauthorized("invalid_otp", "The verification code is incorrect.")
+				return helper.Unauthorized("invalid_otp", "The verification code is incorrect.")
 			}
 			recovery = append(recovery[:used], recovery[used+1:]...)
 			_, _ = a.DB.Exec(c.Context(), `UPDATE users SET recovery_codes = $2 WHERE id = $1`, id, recovery)
@@ -93,42 +93,42 @@ func (a *API) login(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"access_token": tok.AccessToken, "refresh_token": tok.RefreshToken, "token_type": tok.TokenType, "expires_in": tok.ExpiresIn, "user": user})
+	return helper.OK(c, fiber.Map{"access_token": tok.AccessToken, "refresh_token": tok.RefreshToken, "token_type": tok.TokenType, "expires_in": tok.ExpiresIn, "user": user})
 }
 
 func (a *API) refresh(c fiber.Ctx) error {
 	var in struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
 	tok, err := a.Auth.Refresh(c.Context(), in.RefreshToken)
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"access_token": tok.AccessToken, "refresh_token": tok.RefreshToken, "expires_in": tok.ExpiresIn})
+	return helper.OK(c, fiber.Map{"access_token": tok.AccessToken, "refresh_token": tok.RefreshToken, "expires_in": tok.ExpiresIn})
 }
 
 func (a *API) logout(c fiber.Ctx) error {
-	if err := a.Auth.RevokeAll(c.Context(), httpx.P(c).UserID); err != nil {
+	if err := a.Auth.RevokeAll(c.Context(), helper.P(c).UserID); err != nil {
 		return err
 	}
-	return httpx.NoContent(c)
+	return helper.NoContent(c)
 }
 
 func (a *API) me(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	u, err := a.userView(c.Context(), p.UserID, p.BranchID)
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, u)
+	return helper.OK(c, u)
 }
 
 // userView is the shape of GET /auth/me and the login user.
 func (a *API) userView(ctx context.Context, userID, branchID string) (map[string]any, error) {
-	u, err := db.JSONRow(ctx, a.DB, `
+	u, err := repositories.JSONRow(ctx, a.DB, `
 		SELECT u.id, u.name, u.email, u.role, u.avatar_url, u.permissions, u.two_factor_enabled, u.phone, u.phone_verified,
 		  json_build_object('id', s.id, 'name', s.name, 'logo_url', (SELECT value->>'logo_url' FROM settings st JOIN branches hb ON hb.id = st.branch_id WHERE hb.store_id = s.id AND hb.is_head_office AND st.key = 'store'),
 		                    'plan', s.plan, 'plan_expires_at', s.plan_expires_at) AS store,
@@ -140,7 +140,7 @@ func (a *API) userView(ctx context.Context, userID, branchID string) (map[string
 		return nil, err
 	}
 	if u == nil {
-		return nil, httpx.NotFound("User")
+		return nil, helper.NotFound("User")
 	}
 	if u["role"] == "owner" || u["role"] == "administrator" {
 		u["permissions"] = []string{"*"}
@@ -154,20 +154,20 @@ func (a *API) changePassword(c fiber.Ctx) error {
 		New     string `json:"new_password"`
 		Confirm string `json:"new_password_confirmation"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	var hash string
 	if err := a.DB.QueryRow(c.Context(), `SELECT password_hash FROM users WHERE id = $1`, p.UserID).Scan(&hash); err != nil {
 		return err
 	}
-	v := &httpx.Validation{}
-	httpx.Passwords(v, map[string]*string{"current_password": &in.Current, "new_password": &in.New, "new_password_confirmation": &in.Confirm})
+	v := &helper.Validation{}
+	helper.Passwords(v, map[string]*string{"current_password": &in.Current, "new_password": &in.New, "new_password_confirmation": &in.Confirm})
 	if err := v.Err(); err != nil {
 		return err
 	}
-	if !auth.CheckPassword(hash, in.Current) {
+	if !middlewares.CheckPassword(hash, in.Current) {
 		v.Add("current_password", "Current password is incorrect.")
 	}
 	if len(in.New) < 8 {
@@ -179,7 +179,7 @@ func (a *API) changePassword(c fiber.Ctx) error {
 	if err := v.Err(); err != nil {
 		return err
 	}
-	nh, err := auth.HashPassword(in.New)
+	nh, err := middlewares.HashPassword(in.New)
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,7 @@ func (a *API) changePassword(c fiber.Ctx) error {
 		return err
 	}
 	a.activity(c, "password_changed", "Changed password")
-	return httpx.OK(c, fiber.Map{"changed": true})
+	return helper.OK(c, fiber.Map{"changed": true})
 }
 
 // register creates a new store with its owner and head office.
@@ -200,11 +200,11 @@ func (a *API) register(c fiber.Ctx) error {
 		Phone     string `json:"phone"`
 		Referral  string `json:"referral_code"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	v := &httpx.Validation{}
-	httpx.Passwords(v, map[string]*string{"password": &in.Password})
+	v := &helper.Validation{}
+	helper.Passwords(v, map[string]*string{"password": &in.Password})
 	if strings.TrimSpace(in.StoreName) == "" {
 		v.Add("store_name", "Required")
 	}
@@ -234,7 +234,7 @@ func (a *API) register(c fiber.Ctx) error {
 		return err
 	}
 	user, _ := a.userView(c.Context(), userID, "")
-	return httpx.Created(c, fiber.Map{"access_token": tok.AccessToken, "refresh_token": tok.RefreshToken, "token_type": tok.TokenType, "expires_in": tok.ExpiresIn, "user": user})
+	return helper.Created(c, fiber.Map{"access_token": tok.AccessToken, "refresh_token": tok.RefreshToken, "token_type": tok.TokenType, "expires_in": tok.ExpiresIn, "user": user})
 }
 
 type Provision struct {
@@ -260,15 +260,15 @@ func (a *API) Provision(ctx context.Context, tx pgx.Tx, in Provision) (userID, s
 		storeID, strings.TrimSpace(in.StoreName), in.Phone, in.Email, trialEnd).Scan(&branchID); err != nil {
 		return
 	}
-	hash, err := auth.HashPassword(in.Password)
+	hash, err := middlewares.HashPassword(in.Password)
 	if err != nil {
 		return
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO users (store_id, branch_id, name, email, password_hash, phone, role, notifications)
 		VALUES ($1,$2,$3,lower($4),$5,NULLIF($6,''),'owner',$7) RETURNING id`,
 		storeID, branchID, strings.TrimSpace(in.OwnerName), strings.TrimSpace(in.Email), hash, in.Phone, defaultNotifications).Scan(&userID)
-	if db.IsUniqueViolation(err) {
-		err = httpx.Invalid("email", "This email is already registered.")
+	if repositories.IsUniqueViolation(err) {
+		err = helper.Invalid("email", "This email is already registered.")
 		return
 	}
 	if err != nil {

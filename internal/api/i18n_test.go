@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/i18n"
 )
 
 // Fixed catalogues are sent in the language of the request; every text needs a Bahasa Indonesia entry.

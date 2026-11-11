@@ -1,39 +1,59 @@
-# Loads .env when present.
-ifneq (,$(wildcard .env))
-include .env
-export
-endif
-
+PROJECTNAME=lestari
+GOBASE=$(shell pwd)
+MODULE=github.com/roysitumorang/lestari-backend
+PORT_HTTP=`cat .env 2>/dev/null | grep ^PORT= | sed -e 's/^PORT=//'`
+LDFLAGS=-X $(MODULE)/config.AppName=$(PROJECTNAME) \
+	-X $(MODULE)/config.Commit=$(shell git rev-list -1 HEAD) \
+	-X $(MODULE)/config.Build=$(shell date +%FT%T%:z)
 TEST_DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/lestari_test?sslmode=disable
 
-.PHONY: run build migrate seed routes test test-integration lint docker
+.PHONY: all format build release run stop migrate seed routes doc test test-integration lint upgrade-dependencies profile docker
 
-run:
-	go run ./cmd/lestari serve
+format:
+	@find . -name "*.go" -not -path "./.git/*" | xargs gofmt -s -d -w
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/lestari ./cmd/lestari
+	@go mod tidy
+	@CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(PROJECTNAME)
 
-migrate:
-	go run ./cmd/lestari migrate
+release:
+	@go mod tidy
+	@CGO_ENABLED=0 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o $(PROJECTNAME)
 
-seed:
-	go run ./cmd/lestari seed
+run: build stop
+	@-nohup $(GOBASE)/$(PROJECTNAME) run > /dev/null 2>&1 & echo " > $(PROJECTNAME) is available at port $(PORT_HTTP) and PID $$!"
 
-routes:
-	go run ./cmd/lestari routes
+stop:
+	@-lsof -t -i :$(PORT_HTTP) | xargs --no-run-if-empty kill
+
+migrate: build
+	@$(GOBASE)/$(PROJECTNAME) migration run
+
+seed: build
+	@$(GOBASE)/$(PROJECTNAME) seed
+
+routes: build
+	@$(GOBASE)/$(PROJECTNAME) routes
+
+doc:
+	@echo Starting swagger generating
+	@swag fmt -d ./ --exclude ./docs && swag init -g main.go --parseInternal
 
 test:
-	go test ./...
+	@go test ./...
 
 test-integration:
-	APP_ENV=production TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test -count=1 ./...
+	@ENV=production TEST_DATABASE_URL=$(TEST_DATABASE_URL) go test -count=1 ./...
 
-# golangci-lint v2.15.0 and staticcheck 2026.2.2 (see .golangci.yml)
 lint:
-	go vet ./...
-	staticcheck -checks all ./...
-	golangci-lint run ./...
+	@staticcheck ./... && golangci-lint run ./...
+
+upgrade-dependencies:
+	@echo Upgrading dependencies
+	@go get -u ./... && go mod tidy
+
+profile:
+	@curl "http://localhost:$(PORT_HTTP)/debug/pprof/profile?seconds=30" > default.pgo
 
 docker:
-	docker build -t lestari-backend .
+	@docker compose up --build

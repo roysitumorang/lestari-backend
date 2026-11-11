@@ -9,10 +9,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/roysitumorang/lestari-backend/internal/auth"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
+	"github.com/roysitumorang/lestari-backend/middlewares"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 type mission struct {
@@ -75,17 +75,17 @@ func (a *API) missionRows(ctx context.Context, l i18n.Lang, storeID string) ([]f
 
 func (a *API) registerEngagement() {
 	a.addH("GET", "/missions", func(c fiber.Ctx) error {
-		rows, err := a.missionRows(c.Context(), httpx.Lang(c), httpx.P(c).StoreID)
+		rows, err := a.missionRows(c.Context(), helper.Lang(c), helper.P(c).StoreID)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, rows)
+		return helper.OK(c, rows)
 	})
 	a.addH("POST", "/missions/:id/claim", func(c fiber.Ctx) error {
 		// missions are a fixed catalogue, so their id is the mission code
 		code := c.Params("id")
-		p := httpx.P(c)
-		rows, err := a.missionRows(c.Context(), httpx.Lang(c), p.StoreID)
+		p := helper.P(c)
+		rows, err := a.missionRows(c.Context(), helper.Lang(c), p.StoreID)
 		if err != nil {
 			return err
 		}
@@ -96,18 +96,18 @@ func (a *API) registerEngagement() {
 			}
 		}
 		if m == nil {
-			return httpx.NotFound("Mission")
+			return helper.NotFound("Mission")
 		}
 		if m["status"] != "completed" {
 			if m["status"] == "claimed" {
-				return httpx.Conflict("This reward was already claimed.")
+				return helper.Conflict("This reward was already claimed.")
 			}
-			return httpx.Conflict("Finish the mission first.")
+			return helper.Conflict("Finish the mission first.")
 		}
 		err = a.tx(c.Context(), func(tx pgx.Tx) error {
 			if _, err := tx.Exec(c.Context(), `INSERT INTO mission_claims (store_id, code) VALUES ($1,$2)`, p.StoreID, m["code"]); err != nil {
-				if db.IsUniqueViolation(err) {
-					return httpx.Conflict("This reward was already claimed.")
+				if repositories.IsUniqueViolation(err) {
+					return helper.Conflict("This reward was already claimed.")
 				}
 				return err
 			}
@@ -117,7 +117,7 @@ func (a *API) registerEngagement() {
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"id": code, "status": "claimed", "reward_type": "coin", "reward_amount": m["reward_amount"]})
+		return helper.OK(c, fiber.Map{"id": code, "status": "claimed", "reward_type": "coin", "reward_amount": m["reward_amount"]})
 	})
 
 	// referral
@@ -126,34 +126,34 @@ func (a *API) registerEngagement() {
 		var in struct {
 			Code string `json:"code"`
 		}
-		if err := httpx.Decode(c, &in); err != nil {
+		if err := helper.Decode(c, &in); err != nil {
 			return err
 		}
-		p := httpx.P(c)
+		p := helper.P(c)
 		if !p.IsOwner() {
-			return httpx.Forbidden("Only the owner can create the referral code.")
+			return helper.Forbidden("Only the owner can create the referral code.")
 		}
 		code := strings.ToUpper(strings.TrimSpace(in.Code))
 		if code == "" {
-			code = "LST" + strings.ToUpper(auth.RandomToken(3))
+			code = "LST" + strings.ToUpper(middlewares.RandomToken(3))
 		}
 		if len(code) < 4 || len(code) > 16 || strings.Trim(code, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != "" {
-			return httpx.Invalid("code", "Use 4–16 letters or numbers.")
+			return helper.Invalid("code", "Use 4–16 letters or numbers.")
 		}
 		tag, err := a.DB.Exec(c.Context(), `UPDATE stores SET referral_code=$2 WHERE id=$1 AND referral_code IS NULL`, p.StoreID, code)
-		if db.IsUniqueViolation(err) {
-			return httpx.Invalid("code", "This code is already taken.")
+		if repositories.IsUniqueViolation(err) {
+			return helper.Invalid("code", "This code is already taken.")
 		}
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return httpx.Conflict("You already have a referral code.")
+			return helper.Conflict("You already have a referral code.")
 		}
-		return httpx.OK(c, fiber.Map{"code": code, "share_url": a.Cfg.PublicURL + "/register?ref=" + code})
+		return helper.OK(c, fiber.Map{"code": code, "share_url": a.Cfg.PublicURL + "/register?ref=" + code})
 	})
 	a.addH("POST", "/referrals/rewards/transfer-to-coin", func(c fiber.Ctx) error {
-		p := httpx.P(c)
+		p := helper.P(c)
 		var out map[string]any
 		err := a.tx(c.Context(), func(tx pgx.Tx) error {
 			var reward float64
@@ -161,17 +161,17 @@ func (a *API) registerEngagement() {
 				return err
 			}
 			if reward <= 0 {
-				return httpx.Conflict("There are no rewards to transfer yet.")
+				return helper.Conflict("There are no rewards to transfer yet.")
 			}
 			var err error
-			out, err = db.JSONRow(c.Context(), tx, `UPDATE stores SET coin_balance = coin_balance + reward_balance, reward_balance = 0 WHERE id=$1
+			out, err = repositories.JSONRow(c.Context(), tx, `UPDATE stores SET coin_balance = coin_balance + reward_balance, reward_balance = 0 WHERE id=$1
 				RETURNING $2::numeric AS transferred, coin_balance, reward_balance`, p.StoreID, reward)
 			return err
 		})
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, out)
+		return helper.OK(c, out)
 	})
 
 	// integrations
@@ -179,14 +179,14 @@ func (a *API) registerEngagement() {
 	a.addH("POST", "/integrations/:code/activate", func(c fiber.Ctx) error {
 		code := c.Params("code")
 		if integrationByCode(code) == nil {
-			return httpx.NotFound("Integration")
+			return helper.NotFound("Integration")
 		}
-		body, err := httpx.Body(c)
+		body, err := helper.Body(c)
 		if err != nil {
 			return err
 		}
-		if !httpx.Bool(body, "accept_terms") {
-			return httpx.Invalid("accept_terms", "Accept the terms of service to continue.")
+		if !helper.Bool(body, "accept_terms") {
+			return helper.Invalid("accept_terms", "Accept the terms of service to continue.")
 		}
 		settings := "{}"
 		if s, ok := body["settings"].(map[string]any); ok && len(s) > 0 {
@@ -197,24 +197,24 @@ func (a *API) registerEngagement() {
 		if code == "jurnal" {
 			status = "active"
 		}
-		row, err := db.JSONRow(c.Context(), a.DB, `INSERT INTO store_integrations (store_id, code, status, settings, connected_at) VALUES ($1,$2,$3,$4::jsonb, CASE WHEN $3='active' THEN now() END)
+		row, err := repositories.JSONRow(c.Context(), a.DB, `INSERT INTO store_integrations (store_id, code, status, settings, connected_at) VALUES ($1,$2,$3,$4::jsonb, CASE WHEN $3='active' THEN now() END)
 			ON CONFLICT (store_id, code) DO UPDATE SET status=EXCLUDED.status, settings=EXCLUDED.settings, connected_at=EXCLUDED.connected_at
-			RETURNING code, status`, httpx.P(c).StoreID, code, status, settings)
+			RETURNING code, status`, helper.P(c).StoreID, code, status, settings)
 		if err != nil {
 			return err
 		}
 		row["redirect_url"] = nil
-		return httpx.OK(c, row)
+		return helper.OK(c, row)
 	})
 	a.addH("POST", "/integrations/:code/deactivate", func(c fiber.Ctx) error {
 		code := c.Params("code")
 		if integrationByCode(code) == nil {
-			return httpx.NotFound("Integration")
+			return helper.NotFound("Integration")
 		}
-		if _, err := a.DB.Exec(c.Context(), `UPDATE store_integrations SET status='inactive', connected_at=NULL WHERE store_id=$1 AND code=$2`, httpx.P(c).StoreID, code); err != nil {
+		if _, err := a.DB.Exec(c.Context(), `UPDATE store_integrations SET status='inactive', connected_at=NULL WHERE store_id=$1 AND code=$2`, helper.P(c).StoreID, code); err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"code": code, "status": "inactive"})
+		return helper.OK(c, fiber.Map{"code": code, "status": "inactive"})
 	})
 
 	// loans
@@ -222,33 +222,33 @@ func (a *API) registerEngagement() {
 		out := make([]fiber.Map, 0, len(loanProviders))
 		for _, p := range loanProviders {
 			m := maps.Clone(p)
-			m["description"] = httpx.T(c, p["description"].(string))
-			m["interest_info"] = httpx.T(c, p["interest_info"].(string))
+			m["description"] = helper.T(c, p["description"].(string))
+			m["interest_info"] = helper.T(c, p["interest_info"].(string))
 			out = append(out, m)
 		}
-		return httpx.OK(c, out)
+		return helper.OK(c, out)
 	})
 	a.addH("GET", "/loans/applications", func(c fiber.Ctx) error {
-		raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT id, provider_code, amount, tenor_months, purpose, status, created_at FROM loan_applications WHERE store_id=$1 ORDER BY created_at DESC`, httpx.P(c).StoreID)
+		raw, err := repositories.JSONRaw(c.Context(), a.DB, `SELECT id, provider_code, amount, tenor_months, purpose, status, created_at FROM loan_applications WHERE store_id=$1 ORDER BY created_at DESC`, helper.P(c).StoreID)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, raw)
+		return helper.OK(c, raw)
 	})
 	a.addH("POST", "/loans/applications", a.applyLoan)
 
 	// customer feedback collected by the cashier app or receipt link
 	a.addH("POST", "/store-ratings", func(c fiber.Ctx) error {
-		body, err := httpx.Body(c)
+		body, err := helper.Body(c)
 		if err != nil {
 			return err
 		}
-		r, _ := httpx.Int(body, "rating")
+		r, _ := helper.Int(body, "rating")
 		if r < 1 || r > 5 {
-			return httpx.Invalid("rating", "Give 1 to 5 stars.")
+			return helper.Invalid("rating", "Give 1 to 5 stars.")
 		}
 		var sale any
-		if s, ok := httpx.UUID(body, "sale_id"); ok {
+		if s, ok := helper.UUID(body, "sale_id"); ok {
 			sale = s
 		}
 		tags := []string{}
@@ -259,18 +259,18 @@ func (a *API) registerEngagement() {
 				}
 			}
 		}
-		row, err := db.JSONRow(c.Context(), a.DB, `INSERT INTO store_ratings (branch_id, sale_id, customer_name, rating, comment, tags) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),$6)
-			RETURNING id, rating, comment, tags, created_at`, httpx.P(c).BranchID, sale, httpx.Str(body, "customer_name"), r, httpx.Str(body, "comment"), tags)
+		row, err := repositories.JSONRow(c.Context(), a.DB, `INSERT INTO store_ratings (branch_id, sale_id, customer_name, rating, comment, tags) VALUES ($1,$2,NULLIF($3,''),$4,NULLIF($5,''),$6)
+			RETURNING id, rating, comment, tags, created_at`, helper.P(c).BranchID, sale, helper.Str(body, "customer_name"), r, helper.Str(body, "comment"), tags)
 		if err != nil {
 			return err
 		}
-		return httpx.Created(c, row)
+		return helper.Created(c, row)
 	})
 }
 
 func (a *API) getReferral(c fiber.Ctx) error {
-	p := httpx.P(c)
-	row, err := db.JSONRow(c.Context(), a.DB, `SELECT s.referral_code AS code,
+	p := helper.P(c)
+	row, err := repositories.JSONRow(c.Context(), a.DB, `SELECT s.referral_code AS code,
 		CASE WHEN s.referral_code IS NULL THEN NULL ELSE $2 || s.referral_code END AS share_url,
 		(SELECT count(*) FROM stores r WHERE r.referred_by_store_id = s.id) AS referred_count,
 		s.reward_balance,
@@ -282,7 +282,7 @@ func (a *API) getReferral(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }
 
 type integration struct {
@@ -305,7 +305,7 @@ func integrationByCode(code string) *integration {
 }
 
 func (a *API) listIntegrations(c fiber.Ctx) error {
-	rows, err := a.DB.Query(c.Context(), `SELECT code, status, connected_at FROM store_integrations WHERE store_id=$1`, httpx.P(c).StoreID)
+	rows, err := a.DB.Query(c.Context(), `SELECT code, status, connected_at FROM store_integrations WHERE store_id=$1`, helper.P(c).StoreID)
 	if err != nil {
 		return err
 	}
@@ -334,9 +334,9 @@ func (a *API) listIntegrations(c fiber.Ctx) error {
 		if i.Terms != "" {
 			terms = i.Terms
 		}
-		out = append(out, fiber.Map{"code": i.Code, "name": httpx.T(c, i.Name), "description": httpx.T(c, i.Description), "logo_url": nil, "status": s.status, "terms_url": terms, "connected_at": s.connected})
+		out = append(out, fiber.Map{"code": i.Code, "name": helper.T(c, i.Name), "description": helper.T(c, i.Description), "logo_url": nil, "status": s.status, "terms_url": terms, "connected_at": s.connected})
 	}
-	return httpx.OK(c, out)
+	return helper.OK(c, out)
 }
 
 var loanProviders = []fiber.Map{
@@ -356,7 +356,7 @@ func (a *API) applyLoan(c fiber.Ctx) error {
 		Purpose      string  `json:"purpose"`
 		Consent      bool    `json:"consent"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
 	var prov fiber.Map
@@ -365,7 +365,7 @@ func (a *API) applyLoan(c fiber.Ctx) error {
 			prov = p
 		}
 	}
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	if prov == nil {
 		v.Add("provider_code", "Choose a lending partner.")
 	} else {
@@ -389,16 +389,16 @@ func (a *API) applyLoan(c fiber.Ctx) error {
 	if err := v.Err(); err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	if !p.IsOwner() {
-		return httpx.Forbidden("Only the owner can apply for a loan.")
+		return helper.Forbidden("Only the owner can apply for a loan.")
 	}
-	row, err := db.JSONRow(c.Context(), a.DB, `INSERT INTO loan_applications (store_id, provider_code, amount, tenor_months, purpose) VALUES ($1,$2,$3,$4,$5) RETURNING id, status`,
+	row, err := repositories.JSONRow(c.Context(), a.DB, `INSERT INTO loan_applications (store_id, provider_code, amount, tenor_months, purpose) VALUES ($1,$2,$3,$4,$5) RETURNING id, status`,
 		p.StoreID, in.ProviderCode, in.Amount, in.TenorMonths, strings.TrimSpace(in.Purpose))
 	if err != nil {
 		return err
 	}
 	row["redirect_url"] = prov["info_url"]
 	a.activity(c, "loan_applied", "Applied for a loan with {provider}", "provider", in.ProviderCode)
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }

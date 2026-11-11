@@ -4,8 +4,8 @@ import (
 	"context"
 	"slices"
 
+	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
 )
 
 var salesPaymentTypes = en("cash", "debit", "credit_card", "qris", "e_wallet", "bank_transfer", "other")
@@ -76,7 +76,7 @@ func percentAtMost100(typeCol, valueCol string) func(context.Context, *crud.Ctx,
 	return func(_ context.Context, _ *crud.Ctx, vals map[string]any, _ string) error {
 		if vals[typeCol] == "percent" {
 			if v, ok := vals[valueCol].(float64); ok && v > 100 {
-				return httpx.Invalid(valueCol, "A percentage cannot be more than 100.")
+				return helper.Invalid(valueCol, "A percentage cannot be more than 100.")
 			}
 		}
 		return nil
@@ -126,11 +126,11 @@ func (a *API) registerMarketing() {
 			}
 			if ss, ok := s.(string); ok {
 				if es, ok := e.(string); ok && es < ss {
-					return httpx.Invalid("end_date", "Must be on or after the start date.")
+					return helper.Invalid("end_date", "Must be on or after the start date.")
 				}
 			}
 			if vals["type"] == "buy_x_get_y" && (vals["buy_quantity"] == nil || vals["get_quantity"] == nil) && id == "" {
-				v := &httpx.Validation{}
+				v := &helper.Validation{}
 				if vals["buy_quantity"] == nil {
 					v.Add("buy_quantity", "Required for Buy X get Y.")
 				}

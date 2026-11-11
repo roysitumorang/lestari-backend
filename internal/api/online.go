@@ -8,11 +8,11 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 var orderStatuses = en("unpaid", "awaiting_confirmation", "payment_rejected", "processing", "shipped", "delivered", "completed", "returned", "cancelled")
@@ -56,7 +56,7 @@ func (a *API) orderResource() *crud.Resource {
 		Filters: []crud.Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
 		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id != "" {
-				return httpx.Conflict("Change an order with its status actions.")
+				return helper.Conflict("Change an order with its status actions.")
 			}
 			num, err := a.nextNumber(ctx, h.Tx, "ORD", "catalog_orders", "order_number", "branch_id", h.P.BranchID)
 			vals["order_number"] = num
@@ -69,16 +69,16 @@ func (a *API) orderResource() *crud.Resource {
 		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
 			var sub float64
 			n := 0
-			for i, it := range httpx.Items(h.Body, "items") {
-				pid, ok := httpx.UUID(it, "product_id")
-				qty, qok := httpx.Num(it, "quantity")
+			for i, it := range helper.Items(h.Body, "items") {
+				pid, ok := helper.UUID(it, "product_id")
+				qty, qok := helper.Num(it, "quantity")
 				if !ok || !qok || qty <= 0 {
-					return httpx.Invalid("items", "Row {row} needs a product and a quantity above 0.", "row", i+1)
+					return helper.Invalid("items", "Row {row} needs a product and a quantity above 0.", "row", i+1)
 				}
 				var name string
 				var price float64
 				if err := h.Tx.QueryRow(ctx, `SELECT name, selling_price FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL AND show_in_online_store`, pid, h.P.BranchID).Scan(&name, &price); err != nil {
-					return httpx.Invalid("items", "Row {row}: product is not sold online.", "row", i+1)
+					return helper.Invalid("items", "Row {row}: product is not sold online.", "row", i+1)
 				}
 				s := round2(price * qty)
 				if _, err := h.Tx.Exec(ctx, `INSERT INTO catalog_order_items (order_id, product_id, product_name, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6)`, id, pid, name, qty, price, s); err != nil {
@@ -88,7 +88,7 @@ func (a *API) orderResource() *crud.Resource {
 				n++
 			}
 			if n == 0 {
-				return httpx.Invalid("items", "Add at least one item.")
+				return helper.Invalid("items", "Add at least one item.")
 			}
 			_, err := h.Tx.Exec(ctx, `UPDATE catalog_orders SET subtotal=$2, grand_total=$2 + shipping_fee WHERE id=$1`, id, sub)
 			if err == nil {
@@ -96,8 +96,8 @@ func (a *API) orderResource() *crud.Resource {
 			}
 			return err
 		},
-		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
-			items, err := db.JSONRows(ctx, q, `SELECT product_id, product_name, quantity, unit_price, subtotal FROM catalog_order_items WHERE order_id=$1 ORDER BY id`, row["id"])
+		Detail: func(ctx context.Context, q repositories.Querier, p *helper.Principal, row map[string]any) error {
+			items, err := repositories.JSONRows(ctx, q, `SELECT product_id, product_name, quantity, unit_price, subtotal FROM catalog_order_items WHERE order_id=$1 ORDER BY id`, row["id"])
 			row["items"] = items
 			return err
 		},
@@ -132,10 +132,10 @@ func (a *API) registerOnlineCatalog() {
 		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			typ, _ := vals["type"].(string)
 			if typ == "qris" && vals["qris_image_url"] == nil && id == "" {
-				return httpx.Invalid("qris_image_url", "Upload the QRIS image.")
+				return helper.Invalid("qris_image_url", "Upload the QRIS image.")
 			}
 			if (typ == "bank" || typ == "e_wallet") && vals["account_number"] == nil && id == "" {
-				return httpx.Invalid("account_number", "Required")
+				return helper.Invalid("account_number", "Required")
 			}
 			return nil
 		},
@@ -146,31 +146,31 @@ func (a *API) registerOnlineCatalog() {
 }
 
 func (a *API) orderStatus(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	body, err := httpx.Body(c)
+	body, err := helper.Body(c)
 	if err != nil {
 		return err
 	}
-	to := httpx.Str(body, "status")
+	to := helper.Str(body, "status")
 	if !contains(orderStatuses, to) {
-		return httpx.Invalid("status", "Must be one of: {values}.", "values", strings.Join(orderStatuses, ", "))
+		return helper.Invalid("status", "Must be one of: {values}.", "values", strings.Join(orderStatuses, ", "))
 	}
-	reason := httpx.Str(body, "reason")
+	reason := helper.Str(body, "reason")
 	if (to == "cancelled" || to == "payment_rejected") && reason == "" {
-		return httpx.Invalid("reason", "Tell the customer why.")
+		return helper.Invalid("reason", "Tell the customer why.")
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		var from, number string
 		if err := tx.QueryRow(ctx, `SELECT status, order_number FROM catalog_orders WHERE id=$1 AND branch_id=$2 FOR UPDATE`, id, p.BranchID).Scan(&from, &number); err != nil {
-			return httpx.NotFound("Order")
+			return helper.NotFound("Order")
 		}
 		if !contains(orderTransitions[from], to) {
-			return httpx.Conflict("An order that is {from} cannot become {to}.", "from", i18n.Tr(from), "to", i18n.Tr(to))
+			return helper.Conflict("An order that is {from} cannot become {to}.", "from", i18n.Tr(from), "to", i18n.Tr(to))
 		}
 		os, _ := a.setting(ctx, tx, p.BranchID, "online-store")
 		if os["use_physical_stock"] != false && stockHeld(to) != stockHeld(from) {
@@ -204,7 +204,7 @@ func (a *API) orderStatus(c fiber.Ctx) error {
 			}
 		}
 		_, err := tx.Exec(ctx, `UPDATE catalog_orders SET status=$2, status_reason=NULLIF($3,''), courier=COALESCE(NULLIF($4,''), courier),
-			tracking_number=COALESCE(NULLIF($5,''), tracking_number), updated_at=now() WHERE id=$1`, id, to, reason, httpx.Str(body, "courier"), httpx.Str(body, "tracking_number"))
+			tracking_number=COALESCE(NULLIF($5,''), tracking_number), updated_at=now() WHERE id=$1`, id, to, reason, helper.Str(body, "courier"), helper.Str(body, "tracking_number"))
 		return err
 	})
 	if err != nil {
@@ -214,22 +214,22 @@ func (a *API) orderStatus(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }
 
 func (a *API) orderInvoice(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	o, err := a.CRUD.Fetch(c.Context(), a.DB, a.orderResource(), p, id)
 	if err != nil {
 		return err
 	}
 	name, addr, phone := a.storeHeader(c.Context(), p.BranchID)
 	d := export.NewPDF(595, 842)
-	tr := httpx.Lang(c).T
+	tr := helper.Lang(c).T
 	d.Page()
 	d.Text(40, 790, 18, true, tr("INVOICE"))
 	d.Text(40, 770, 10, true, name)

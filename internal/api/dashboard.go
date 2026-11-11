@@ -5,8 +5,8 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 func (a *API) registerDashboard() {
@@ -24,11 +24,11 @@ func pctChange(cur, prev float64) any {
 }
 
 func (a *API) dashboard(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	day := c.Query("date", a.today())
 	t, err := time.ParseInLocation("2006-01-02", day, a.Loc)
 	if err != nil {
-		return httpx.Invalid("date", "Use the format YYYY-MM-DD.")
+		return helper.Invalid("date", "Use the format YYYY-MM-DD.")
 	}
 	prev := t.AddDate(0, 0, -1).Format("2006-01-02")
 	unpaidRevenue := c.Query("include_unpaid_revenue") == "true"
@@ -36,7 +36,7 @@ func (a *API) dashboard(c fiber.Ctx) error {
 	ctx := c.Context()
 
 	totals := func(d string) (map[string]any, error) {
-		return db.JSONRow(ctx, a.DB, `SELECT count(*) AS transaction_count,
+		return repositories.JSONRow(ctx, a.DB, `SELECT count(*) AS transaction_count,
 			COALESCE(sum(CASE WHEN $3 OR status <> 'unpaid' THEN grand_total ELSE paid_amount END), 0) AS revenue,
 			COALESCE(sum(CASE WHEN $4 OR status <> 'unpaid' THEN profit ELSE 0 END), 0) AS profit,
 			COALESCE(round(avg(grand_total)::numeric, 2), 0) AS average_basket
@@ -55,7 +55,7 @@ func (a *API) dashboard(c fiber.Ctx) error {
 		"revenue":           pctChange(num(cur["revenue"]), num(before["revenue"])),
 		"profit":            pctChange(num(cur["profit"]), num(before["profit"])),
 	}
-	hourly, err := db.JSONRows(ctx, a.DB, `SELECT to_char(h, 'HH24":00"') AS hour, count(s.id) AS transaction_count,
+	hourly, err := repositories.JSONRows(ctx, a.DB, `SELECT to_char(h, 'HH24":00"') AS hour, count(s.id) AS transaction_count,
 		COALESCE(sum(CASE WHEN $3 OR s.status <> 'unpaid' THEN s.grand_total ELSE s.paid_amount END), 0) AS revenue,
 		COALESCE(sum(CASE WHEN $4 OR s.status <> 'unpaid' THEN s.profit ELSE 0 END), 0) AS profit
 		FROM generate_series($2::date::timestamp, $2::date::timestamp + interval '23 hours', interval '1 hour') h
@@ -64,13 +64,13 @@ func (a *API) dashboard(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	top, err := db.JSONRows(ctx, a.DB, `SELECT i.product_id, max(i.product_name) AS name, sum(i.quantity) AS quantity, sum(i.subtotal) AS revenue
+	top, err := repositories.JSONRows(ctx, a.DB, `SELECT i.product_id, max(i.product_name) AS name, sum(i.quantity) AS quantity, sum(i.subtotal) AS revenue
 		FROM sale_items i JOIN sales s ON s.id = i.sale_id WHERE s.branch_id=$1 AND s.created_at::date = $2::date
 		GROUP BY i.product_id ORDER BY revenue DESC LIMIT 5`, p.BranchID, day)
 	if err != nil {
 		return err
 	}
-	low, err := db.JSONRows(ctx, a.DB, `SELECT id AS product_id, name, stock, minimum_stock FROM products
+	low, err := repositories.JSONRows(ctx, a.DB, `SELECT id AS product_id, name, stock, minimum_stock FROM products
 		WHERE branch_id=$1 AND deleted_at IS NULL AND track_stock AND minimum_stock IS NOT NULL AND stock <= minimum_stock ORDER BY stock - minimum_stock LIMIT 10`, p.BranchID)
 	if err != nil {
 		return err
@@ -78,21 +78,21 @@ func (a *API) dashboard(c fiber.Ctx) error {
 	alerts := []map[string]any{}
 	store, _ := a.setting(ctx, a.DB, p.BranchID, "store")
 	if store["latitude"] == nil {
-		alerts = append(alerts, map[string]any{"type": "store_location", "message": httpx.T(c, "Your store has no map location yet."), "action_label": httpx.T(c, "Set location"), "action_route": "store"})
+		alerts = append(alerts, map[string]any{"type": "store_location", "message": helper.T(c, "Your store has no map location yet."), "action_label": helper.T(c, "Set location"), "action_route": "store"})
 	}
 	var expires *time.Time
 	_ = a.DB.QueryRow(ctx, `SELECT plan_expires_at FROM stores WHERE id=$1`, p.StoreID).Scan(&expires)
 	if expires != nil && time.Until(*expires) < 7*24*time.Hour {
-		msg := httpx.T(c, "Your subscription ends on {date}.", "date", expires.In(a.Loc).Format("02-01-2006"))
+		msg := helper.T(c, "Your subscription ends on {date}.", "date", expires.In(a.Loc).Format("02-01-2006"))
 		if time.Until(*expires) < 0 {
-			msg = httpx.T(c, "Your subscription has ended.")
+			msg = helper.T(c, "Your subscription has ended.")
 		}
-		alerts = append(alerts, map[string]any{"type": "subscription", "message": msg, "action_label": httpx.T(c, "Renew"), "action_route": "billing"})
+		alerts = append(alerts, map[string]any{"type": "subscription", "message": msg, "action_label": helper.T(c, "Renew"), "action_route": "billing"})
 	}
 	var used, quota float64
 	_ = a.DB.QueryRow(ctx, `SELECT COALESCE((SELECT sum(size) FROM uploads WHERE store_id=$1),0)/1048576.0, storage_quota_mb FROM stores WHERE id=$1`, p.StoreID).Scan(&used, &quota)
 	if quota > 0 && used/quota > 0.9 {
-		alerts = append(alerts, map[string]any{"type": "storage", "message": httpx.T(c, "Your storage is almost full."), "action_label": httpx.T(c, "Add storage"), "action_route": "storage"})
+		alerts = append(alerts, map[string]any{"type": "storage", "message": helper.T(c, "Your storage is almost full."), "action_label": helper.T(c, "Add storage"), "action_route": "storage"})
 	}
-	return httpx.OK(c, map[string]any{"date": day, "summary": cur, "hourly": hourly, "top_products": top, "low_stock": low, "alerts": alerts})
+	return helper.OK(c, map[string]any{"date": day, "summary": cur, "hourly": hourly, "top_products": top, "low_stock": low, "alerts": alerts})
 }

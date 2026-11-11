@@ -13,11 +13,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	qrcode "github.com/skip2/go-qrcode"
 
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 type settingDef struct {
@@ -25,8 +25,8 @@ type settingDef struct {
 	Plugin   string // plugin needed to change it
 	Fields   []crud.Field
 	Defaults map[string]any
-	Validate func(ctx context.Context, a *API, p *httpx.Principal, vals map[string]any) error
-	After    func(ctx context.Context, tx pgx.Tx, p *httpx.Principal, vals map[string]any) error
+	Validate func(ctx context.Context, a *API, p *helper.Principal, vals map[string]any) error
+	After    func(ctx context.Context, tx pgx.Tx, p *helper.Principal, vals map[string]any) error
 }
 
 func bools(names ...string) []crud.Field {
@@ -61,7 +61,7 @@ func (a *API) settingDefs() map[string]*settingDef {
 				{Name: "currency", Enum: en("IDR", "MYR", "SGD", "USD", "AUD", "EUR")}, {Name: "timezone", Enum: en("Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura")},
 				{Name: "allow_negative_stock", Kind: crud.Bool}},
 			Defaults: map[string]any{"name": "", "country_code": "ID", "currency": "IDR", "timezone": "Asia/Jakarta", "stock_valuation_method": "average", "allow_negative_stock": false},
-			After: func(ctx context.Context, tx pgx.Tx, p *httpx.Principal, vals map[string]any) error {
+			After: func(ctx context.Context, tx pgx.Tx, p *helper.Principal, vals map[string]any) error {
 				name, _ := vals["name"].(string)
 				if name == "" {
 					return nil
@@ -78,14 +78,14 @@ func (a *API) settingDefs() map[string]*settingDef {
 				crud.Field{Name: "subdomain"}, crud.Field{Name: "store_email"}, crud.Field{Name: "description"}, crud.Field{Name: "facebook"}, crud.Field{Name: "twitter"}, crud.Field{Name: "instagram"},
 				crud.Field{Name: "notify_staff_ids", Kind: crud.UUIDArray}),
 			Defaults: map[string]any{"is_enabled": false, "seo_enabled": true, "pwa_enabled": false, "use_physical_stock": true, "notify_owner": true, "notify_staff_ids": []any{}},
-			Validate: func(ctx context.Context, a *API, p *httpx.Principal, vals map[string]any) error {
+			Validate: func(ctx context.Context, a *API, p *helper.Principal, vals map[string]any) error {
 				return a.uniqueSlug(ctx, p, "online-store", "subdomain", vals)
 			}},
 		{Key: "link-page",
 			Fields: append(bools("is_enabled", "show_watermark"), crud.Field{Name: "username", Required: true}, crud.Field{Name: "slogan"},
 				crud.Field{Name: "background_color"}, crud.Field{Name: "links", Kind: crud.JSON}),
 			Defaults: map[string]any{"is_enabled": false, "username": "", "show_watermark": true, "background_color": "#0f9d76", "links": []any{}},
-			Validate: func(ctx context.Context, a *API, p *httpx.Principal, vals map[string]any) error {
+			Validate: func(ctx context.Context, a *API, p *helper.Principal, vals map[string]any) error {
 				return a.uniqueSlug(ctx, p, "link-page", "username", vals)
 			}},
 		{Key: "qr-order",
@@ -130,7 +130,7 @@ func (a *API) settingDefs() map[string]*settingDef {
 }
 
 // setting returns a branch setting merged over its defaults.
-func (a *API) setting(ctx context.Context, q db.Querier, branchID string, key string) (map[string]any, error) {
+func (a *API) setting(ctx context.Context, q repositories.Querier, branchID string, key string) (map[string]any, error) {
 	out := map[string]any{}
 	if d, ok := a.defs[key]; ok {
 		maps.Copy(out, d.Defaults)
@@ -138,7 +138,7 @@ func (a *API) setting(ctx context.Context, q db.Querier, branchID string, key st
 	var raw []byte
 	err := q.QueryRow(ctx, `SELECT value FROM settings WHERE branch_id=$1 AND key=$2`, branchID, key).Scan(&raw)
 	if err != nil {
-		if db.IsNoRows(err) {
+		if repositories.IsNoRows(err) {
 			return out, nil
 		}
 		return out, err
@@ -151,7 +151,7 @@ func (a *API) setting(ctx context.Context, q db.Querier, branchID string, key st
 	return out, nil
 }
 
-func (a *API) uniqueSlug(ctx context.Context, p *httpx.Principal, key, field string, vals map[string]any) error {
+func (a *API) uniqueSlug(ctx context.Context, p *helper.Principal, key, field string, vals map[string]any) error {
 	s, _ := vals[field].(string)
 	if s == "" {
 		return nil
@@ -159,25 +159,25 @@ func (a *API) uniqueSlug(ctx context.Context, p *httpx.Principal, key, field str
 	s = strings.ToLower(s)
 	vals[field] = s
 	if !slugRe.MatchString(s) {
-		return httpx.Invalid(field, "Use 3–40 lowercase letters, numbers or dashes.")
+		return helper.Invalid(field, "Use 3–40 lowercase letters, numbers or dashes.")
 	}
 	var taken bool
 	if err := a.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM settings WHERE key=$1 AND lower(value->>$2)=$3 AND branch_id <> $4)`, key, field, s, p.BranchID).Scan(&taken); err != nil {
 		return err
 	}
 	if taken {
-		return httpx.Invalid(field, "This name is already taken.")
+		return helper.Invalid(field, "This name is already taken.")
 	}
 	return nil
 }
 
 func (a *API) getSetting(key string) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		m, err := a.setting(c.Context(), a.DB, httpx.P(c).BranchID, key)
+		m, err := a.setting(c.Context(), a.DB, helper.P(c).BranchID, key)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, m)
+		return helper.OK(c, m)
 	}
 }
 
@@ -185,16 +185,16 @@ func (a *API) putSetting(key string) fiber.Handler {
 	d := a.defs[key]
 	res := &crud.Resource{Singular: "Setting", Fields: d.Fields}
 	return func(c fiber.Ctx) error {
-		p := httpx.P(c)
+		p := helper.P(c)
 		if d.Plugin != "" {
 			if err := requirePlugin(c, d.Plugin); err != nil {
 				return err
 			}
 		}
 		if p.Role == "cashier" {
-			return httpx.Forbidden("Cashiers cannot change settings.")
+			return helper.Forbidden("Cashiers cannot change settings.")
 		}
-		body, err := httpx.Body(c)
+		body, err := helper.Body(c)
 		if err != nil {
 			return err
 		}
@@ -203,7 +203,7 @@ func (a *API) putSetting(key string) fiber.Handler {
 			return err
 		}
 		// required fields must not be cleared
-		v := &httpx.Validation{}
+		v := &helper.Validation{}
 		for _, f := range d.Fields {
 			if f.Required {
 				if x, present := vals[f.Name]; present && x == nil {
@@ -257,14 +257,14 @@ func (a *API) registerSettings() {
 	a.addH("GET", "/settings/link-page/username-availability", func(c fiber.Ctx) error {
 		u := strings.ToLower(strings.TrimSpace(c.Query("username")))
 		if !slugRe.MatchString(u) {
-			return httpx.OK(c, fiber.Map{"available": false})
+			return helper.OK(c, fiber.Map{"available": false})
 		}
 		var taken bool
-		err := a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM settings WHERE key='link-page' AND lower(value->>'username')=$1 AND branch_id <> $2)`, u, httpx.P(c).BranchID).Scan(&taken)
+		err := a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM settings WHERE key='link-page' AND lower(value->>'username')=$1 AND branch_id <> $2)`, u, helper.P(c).BranchID).Scan(&taken)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"available": !taken})
+		return helper.OK(c, fiber.Map{"available": !taken})
 	})
 	a.addH("GET", "/settings/qr-order/menu-book", a.menuBook)
 	a.addH("GET", "/settings/storage", a.storage)
@@ -274,7 +274,7 @@ func (a *API) registerSettings() {
 }
 
 func (a *API) storeQRCode(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	lp, _ := a.setting(c.Context(), a.DB, p.BranchID, "link-page")
 	os, _ := a.setting(c.Context(), a.DB, p.BranchID, "online-store")
 	url := a.Cfg.PublicURL + "/s/" + p.BranchID
@@ -291,31 +291,31 @@ func (a *API) storeQRCode(c fiber.Ctx) error {
 }
 
 func (a *API) linkPageVisitors(c fiber.Ctx) error {
-	p := httpx.P(c)
-	pg := httpx.Paging(c, 50)
+	p := helper.P(c)
+	pg := helper.Paging(c, 50)
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM link_page_visits WHERE branch_id=$1`, p.BranchID).Scan(&total); err != nil {
 		return err
 	}
-	raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT ip_address, visited_at, referrer FROM link_page_visits WHERE branch_id=$1 ORDER BY visited_at DESC LIMIT $2 OFFSET $3`, p.BranchID, pg.PerPage, pg.Offset)
+	raw, err := repositories.JSONRaw(c.Context(), a.DB, `SELECT ip_address, visited_at, referrer FROM link_page_visits WHERE branch_id=$1 ORDER BY visited_at DESC LIMIT $2 OFFSET $3`, p.BranchID, pg.PerPage, pg.Offset)
 	if err != nil {
 		return err
 	}
-	return httpx.List(c, raw, httpx.NewMeta(pg, total))
+	return helper.List(c, raw, helper.NewMeta(pg, total))
 }
 
 func (a *API) menuBook(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	qo, _ := a.setting(c.Context(), a.DB, p.BranchID, "qr-order")
 	ids := []string{}
 	if arr, ok := qo["category_ids"].([]any); ok {
 		for _, x := range arr {
-			if id, ok := x.(string); ok && httpx.IsUUID(id) {
+			if id, ok := x.(string); ok && helper.IsUUID(id) {
 				ids = append(ids, id)
 			}
 		}
 	}
-	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT COALESCE(c.name, 'Other') AS category, p.name, p.selling_price, p.online_description
+	rows, err := repositories.JSONRows(c.Context(), a.DB, `SELECT COALESCE(c.name, 'Other') AS category, p.name, p.selling_price, p.online_description
 		FROM products p LEFT JOIN categories c ON c.id = p.category_id
 		WHERE p.branch_id=$1 AND p.deleted_at IS NULL AND p.show_in_online_store AND (cardinality($2::uuid[]) = 0 OR p.category_id = ANY($2))
 		ORDER BY c.sort_order NULLS LAST, c.name NULLS LAST, p.name`, p.BranchID, ids)
@@ -324,7 +324,7 @@ func (a *API) menuBook(c fiber.Ctx) error {
 	}
 	name, _, _ := a.storeHeader(c.Context(), p.BranchID)
 	d := export.NewPDF(595, 842)
-	tr := httpx.Lang(c).T
+	tr := helper.Lang(c).T
 	d.Page()
 	y := 790.0
 	d.Text(40, y, 20, true, name)
@@ -363,8 +363,8 @@ var storagePackages = map[string]struct {
 }{"1gb_monthly": {1024, 15000}, "5gb_monthly": {5120, 50000}, "10gb_monthly": {10240, 90000}}
 
 func (a *API) storage(c fiber.Ctx) error {
-	p := httpx.P(c)
-	row, err := db.JSONRow(c.Context(), a.DB, `SELECT s.plan,
+	p := helper.P(c)
+	row, err := repositories.JSONRow(c.Context(), a.DB, `SELECT s.plan,
 		round(((SELECT COALESCE(sum(size),0) FROM uploads WHERE store_id = s.id) / 1048576.0
 		  + (SELECT count(*) FROM sales sa JOIN branches b ON b.id = sa.branch_id WHERE b.store_id = s.id) * 0.004
 		  + (SELECT count(*) FROM products pr JOIN branches b ON b.id = pr.branch_id WHERE b.store_id = s.id) * 0.002)::numeric, 2) AS used_mb,
@@ -375,7 +375,7 @@ func (a *API) storage(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }
 
 func (a *API) buyStorage(c fiber.Ctx) error {
@@ -383,24 +383,24 @@ func (a *API) buyStorage(c fiber.Ctx) error {
 		Package       string `json:"package"`
 		PaymentMethod string `json:"payment_method"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
 	pkg, ok := storagePackages[in.Package]
 	if !ok {
-		return httpx.Invalid("package", "Unknown storage package.")
+		return helper.Invalid("package", "Unknown storage package.")
 	}
 	if in.PaymentMethod != "" && in.PaymentMethod != "coin" {
-		return httpx.Invalid("payment_method", "Storage can only be paid with premium coins.")
+		return helper.Invalid("payment_method", "Storage can only be paid with premium coins.")
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	var out map[string]any
 	err := a.tx(c.Context(), func(tx pgx.Tx) error {
 		if err := spendCoins(c.Context(), tx, p.StoreID, pkg.Price); err != nil {
 			return err
 		}
 		var err error
-		out, err = db.JSONRow(c.Context(), tx, `UPDATE stores SET storage_quota_mb = 500 + $2,
+		out, err = repositories.JSONRow(c.Context(), tx, `UPDATE stores SET storage_quota_mb = 500 + $2,
 			storage_extra_expires_at = GREATEST(COALESCE(storage_extra_expires_at, current_date), current_date) + 30, updated_at = now()
 			WHERE id=$1 RETURNING storage_quota_mb AS quota_mb, storage_extra_expires_at AS expires_at, coin_balance`, p.StoreID, pkg.MB)
 		if err != nil {
@@ -417,7 +417,7 @@ func (a *API) buyStorage(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, out)
+	return helper.OK(c, out)
 }
 
 // spendCoins deducts premium coins or fails with 402.
@@ -427,7 +427,7 @@ func spendCoins(ctx context.Context, tx pgx.Tx, storeID string, amount float64) 
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return httpx.PaymentRequired("insufficient_balance", "Your premium coin balance is too low. Top up first.")
+		return helper.PaymentRequired("insufficient_balance", "Your premium coin balance is too low. Top up first.")
 	}
 	return nil
 }
@@ -435,14 +435,14 @@ func spendCoins(ctx context.Context, tx pgx.Tx, storeID string, amount float64) 
 // ---------- reset data ----------
 
 func (a *API) resetOTP(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	if !p.IsOwner() {
-		return httpx.Forbidden("Only the owner can reset data.")
+		return helper.Forbidden("Only the owner can reset data.")
 	}
 	var in struct {
 		Channel string `json:"channel"`
 	}
-	_ = httpx.Decode(c, &in)
+	_ = helper.Decode(c, &in)
 	var email string
 	var phone *string
 	if err := a.DB.QueryRow(c.Context(), `SELECT email, phone FROM users WHERE id=$1`, p.UserID).Scan(&email, &phone); err != nil {
@@ -456,10 +456,10 @@ func (a *API) resetOTP(c fiber.Ctx) error {
 	if in.Channel == "whatsapp" && phone != nil && *phone != "" {
 		to, channel = *phone, "whatsapp"
 	}
-	if err := a.Sender.Send(c.Context(), channel, to, httpx.T(c, "Your Lestari data-reset code is {code}. Do not share it.", "code", code)); err != nil {
+	if err := a.Sender.Send(c.Context(), channel, to, helper.T(c, "Your Lestari data-reset code is {code}. Do not share it.", "code", code)); err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"expires_in": 300, "sent_to": mask(to)})
+	return helper.OK(c, fiber.Map{"expires_in": 300, "sent_to": mask(to)})
 }
 
 func mask(s string) string {
@@ -475,9 +475,9 @@ func mask(s string) string {
 var resetTypes = en("images", "products", "sales", "purchases", "customers", "suppliers", "staff", "taxes", "discounts", "categories", "fees", "promotions", "shifts", "points", "held_transactions", "online_orders")
 
 func (a *API) resetData(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	if !p.IsOwner() {
-		return httpx.Forbidden("Only the owner can reset data.")
+		return helper.Forbidden("Only the owner can reset data.")
 	}
 	var in struct {
 		DataTypes []string `json:"data_types"`
@@ -486,10 +486,10 @@ func (a *API) resetData(c fiber.Ctx) error {
 		Month     int      `json:"month"`
 		OTP       string   `json:"otp"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	if len(in.DataTypes) == 0 {
 		v.Add("data_types", "Choose what to delete.")
 	}
@@ -520,7 +520,7 @@ func (a *API) resetData(c fiber.Ctx) error {
 		return err
 	}
 	if err := a.checkOTP(c.Context(), p.UserID, "reset_data", "", in.OTP); err != nil {
-		he := &httpx.Error{}
+		he := &helper.Error{}
 		if errors.As(err, &he) {
 			he.Fields = map[string][]i18n.Text{"otp": he.Fields["code"]}
 		}
@@ -585,5 +585,5 @@ func (a *API) resetData(c fiber.Ctx) error {
 		return err
 	}
 	a.activity(c, "data_reset", "Reset {types}", "types", strings.Join(types, ", "))
-	return httpx.OK(c, fiber.Map{"job_id": id, "status": "queued"})
+	return helper.OK(c, fiber.Map{"job_id": id, "status": "queued"})
 }

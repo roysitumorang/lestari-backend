@@ -9,11 +9,11 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/roysitumorang/lestari-backend/internal/auth"
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/middlewares"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 var permissionList = []string{"dashboard", "products", "stock", "customers", "suppliers", "discounts", "taxes", "sales", "purchases", "finance", "reports", "debts",
@@ -30,7 +30,7 @@ const staffMonthly = 15000.0
 
 func requireManager(h *crud.Ctx) error {
 	if h.P.Role != "owner" && h.P.Role != "administrator" {
-		return httpx.Forbidden("Only the owner or an administrator can manage staff.")
+		return helper.Forbidden("Only the owner or an administrator can manage staff.")
 	}
 	return nil
 }
@@ -38,7 +38,7 @@ func requireManager(h *crud.Ctx) error {
 func (a *API) staffResource() *crud.Resource {
 	return &crud.Resource{
 		Name: "Staff", Singular: "Staff member", Table: "users", SoftDelete: true, DefaultSort: "t.name",
-		Scope: func(b *crud.Builder, p *httpx.Principal) string {
+		Scope: func(b *crud.Builder, p *helper.Principal) string {
 			return "t.store_id = " + b.Add(p.StoreID) + " AND t.role <> 'owner'"
 		},
 		InsertScope: storeInsert,
@@ -61,13 +61,13 @@ func (a *API) staffResource() *crud.Resource {
 			if e, ok := vals["email"].(string); ok {
 				e = strings.ToLower(e)
 				if !strings.Contains(e, "@") {
-					return httpx.Invalid("email", "Enter a valid email.")
+					return helper.Invalid("email", "Enter a valid email.")
 				}
 				vals["email"] = e
 			}
 			if pin, ok := vals["ppob_pin_hash"]; ok && pin != nil {
-				if raw := httpx.Str(h.Body, "ppob_pin"); len(raw) != 6 || strings.Trim(raw, "0123456789") != "" {
-					return httpx.Invalid("ppob_pin", "The PIN must be 6 digits.")
+				if raw := helper.Str(h.Body, "ppob_pin"); len(raw) != 6 || strings.Trim(raw, "0123456789") != "" {
+					return helper.Invalid("ppob_pin", "The PIN must be 6 digits.")
 				}
 			}
 			if id == "" {
@@ -86,8 +86,8 @@ func (a *API) staffResource() *crud.Resource {
 				return nil
 			}
 			// a role change resets permissions to that role's defaults
-			if role := httpx.Str(h.Body, "role"); role != "" {
-				_, err := h.Tx.Exec(ctx, `UPDATE users SET permissions=$2 WHERE id=$1 AND (permissions = '{}' OR $3)`, id, defaultPermissions[role], httpx.Bool(h.Body, "reset_permissions"))
+			if role := helper.Str(h.Body, "role"); role != "" {
+				_, err := h.Tx.Exec(ctx, `UPDATE users SET permissions=$2 WHERE id=$1 AND (permissions = '{}' OR $3)`, id, defaultPermissions[role], helper.Bool(h.Body, "reset_permissions"))
 				return err
 			}
 			return nil
@@ -97,7 +97,7 @@ func (a *API) staffResource() *crud.Resource {
 				return err
 			}
 			if id == h.P.UserID {
-				return httpx.Conflict("You cannot delete your own account.")
+				return helper.Conflict("You cannot delete your own account.")
 			}
 			_, err := h.Tx.Exec(ctx, `UPDATE refresh_tokens SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL`, id)
 			return err
@@ -111,45 +111,45 @@ func (a *API) registerStaff() {
 	a.addH("GET", "/staff/billing-estimate", func(c fiber.Ctx) error {
 		extra, _ := strconv.Atoi(c.Query("additional_staff", "1"))
 		var current int
-		if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM users WHERE store_id=$1 AND role <> 'owner' AND deleted_at IS NULL`, httpx.P(c).StoreID).Scan(&current); err != nil {
+		if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM users WHERE store_id=$1 AND role <> 'owner' AND deleted_at IS NULL`, helper.P(c).StoreID).Scan(&current); err != nil {
 			return err
 		}
 		billable := max(current+extra-includedStaff, 0)
-		return httpx.OK(c, fiber.Map{"monthly_cost": float64(billable) * staffMonthly, "currency": "IDR", "included_staff": includedStaff, "current_staff": current})
+		return helper.OK(c, fiber.Map{"monthly_cost": float64(billable) * staffMonthly, "currency": "IDR", "included_staff": includedStaff, "current_staff": current})
 	})
 	a.addH("GET", "/staff/:id/permissions", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
 		var perms []string
-		if err := a.DB.QueryRow(c.Context(), `SELECT permissions FROM users WHERE id=$1 AND store_id=$2 AND role <> 'owner' AND deleted_at IS NULL`, id, httpx.P(c).StoreID).Scan(&perms); err != nil {
-			return httpx.NotFound("Staff member")
+		if err := a.DB.QueryRow(c.Context(), `SELECT permissions FROM users WHERE id=$1 AND store_id=$2 AND role <> 'owner' AND deleted_at IS NULL`, id, helper.P(c).StoreID).Scan(&perms); err != nil {
+			return helper.NotFound("Staff member")
 		}
 		avail := make([]fiber.Map, len(permissionList))
 		for i, p := range permissionList {
 			avail[i] = fiber.Map{"value": p, "label": strings.ReplaceAll(p, "_", " ")}
 		}
-		return httpx.OK(c, fiber.Map{"permissions": perms, "available": avail})
+		return helper.OK(c, fiber.Map{"permissions": perms, "available": avail})
 	})
 	a.addH("PUT", "/staff/:id/permissions", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		p := httpx.P(c)
+		p := helper.P(c)
 		if p.Role != "owner" && p.Role != "administrator" {
-			return httpx.Forbidden("Only the owner or an administrator can change access rights.")
+			return helper.Forbidden("Only the owner or an administrator can change access rights.")
 		}
 		var in struct {
 			Permissions []string `json:"permissions"`
 		}
-		if err := httpx.Decode(c, &in); err != nil {
+		if err := helper.Decode(c, &in); err != nil {
 			return err
 		}
 		for _, x := range in.Permissions {
 			if !contains(permissionList, x) {
-				return httpx.Invalid("permissions", "Unknown permission {permission}.", "permission", x)
+				return helper.Invalid("permissions", "Unknown permission {permission}.", "permission", x)
 			}
 		}
 		if in.Permissions == nil {
@@ -160,42 +160,42 @@ func (a *API) registerStaff() {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return httpx.NotFound("Staff member")
+			return helper.NotFound("Staff member")
 		}
 		a.activity(c, "permissions_changed", "Changed access rights of staff {id}", "id", id)
-		return httpx.OK(c, fiber.Map{"permissions": in.Permissions})
+		return helper.OK(c, fiber.Map{"permissions": in.Permissions})
 	})
 	a.addH("POST", "/staff/:id/resend-invitation", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
 		var email, name, status string
-		if err := a.DB.QueryRow(c.Context(), `SELECT email, name, status FROM users WHERE id=$1 AND store_id=$2 AND role <> 'owner' AND deleted_at IS NULL`, id, httpx.P(c).StoreID).Scan(&email, &name, &status); err != nil {
-			return httpx.NotFound("Staff member")
+		if err := a.DB.QueryRow(c.Context(), `SELECT email, name, status FROM users WHERE id=$1 AND store_id=$2 AND role <> 'owner' AND deleted_at IS NULL`, id, helper.P(c).StoreID).Scan(&email, &name, &status); err != nil {
+			return helper.NotFound("Staff member")
 		}
 		if status != "invited" {
-			return httpx.Conflict("This staff member has already signed in.")
+			return helper.Conflict("This staff member has already signed in.")
 		}
-		if err := a.Sender.Send(c.Context(), "email", email, httpx.T(c, "Hi {name}, you have been invited to Lestari. Sign in with this email address and the password your manager gave you.", "name", name)); err != nil {
+		if err := a.Sender.Send(c.Context(), "email", email, helper.T(c, "Hi {name}, you have been invited to Lestari. Sign in with this email address and the password your manager gave you.", "name", name)); err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"sent": true})
+		return helper.OK(c, fiber.Map{"sent": true})
 	})
 	a.addH("GET", "/staff/:id/activity-logs", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
 		var ok bool
-		if err := a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND store_id=$2)`, id, httpx.P(c).StoreID).Scan(&ok); err != nil || !ok {
-			return httpx.NotFound("Staff member")
+		if err := a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND store_id=$2)`, id, helper.P(c).StoreID).Scan(&ok); err != nil || !ok {
+			return helper.NotFound("Staff member")
 		}
 		return a.activityList(c, id)
 	})
 
 	// attendance
-	gate := auth.RequirePlugin("attendance")
+	gate := middlewares.RequirePlugin("attendance")
 	a.add("GET", "/staff-attendances", gate, a.listAttendance)
 	a.add("GET", "/staff-attendances/export", gate, a.exportAttendance)
 	a.add("GET", "/staff-attendances/:id", gate, a.getAttendance)
@@ -212,12 +212,12 @@ const attendanceCols = `a.id, a.date, a.staff_id, u.name AS staff_name, a.clock_
 	a.status, a.location, a.clock_in_photo_url, a.clock_out_photo_url, a.note`
 
 func (a *API) attendanceWhere(c fiber.Ctx) (string, []any, error) {
-	start, end, err := httpx.DateRange(c, a.Loc)
+	start, end, err := helper.DateRange(c, a.Loc)
 	if err != nil {
 		return "", nil, err
 	}
-	staff := httpx.QueryUUID(c, "staff_id")
-	return `a.branch_id=$1 AND a.date BETWEEN $2::date AND $3::date AND ($4::uuid IS NULL OR a.staff_id = $4::uuid)`, []any{httpx.P(c).BranchID, start, end, staff}, nil
+	staff := helper.QueryUUID(c, "staff_id")
+	return `a.branch_id=$1 AND a.date BETWEEN $2::date AND $3::date AND ($4::uuid IS NULL OR a.staff_id = $4::uuid)`, []any{helper.P(c).BranchID, start, end, staff}, nil
 }
 
 func (a *API) listAttendance(c fiber.Ctx) error {
@@ -225,19 +225,19 @@ func (a *API) listAttendance(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	pg := httpx.Paging(c, 50)
-	summary, err := db.JSONRow(c.Context(), a.DB, `SELECT count(*) AS attendance_count, count(*) FILTER (WHERE a.status='late') AS late_count,
+	pg := helper.Paging(c, 50)
+	summary, err := repositories.JSONRow(c.Context(), a.DB, `SELECT count(*) AS attendance_count, count(*) FILTER (WHERE a.status='late') AS late_count,
 		COALESCE(round((sum(EXTRACT(EPOCH FROM (a.clock_out_at - a.clock_in_at))) / 3600)::numeric, 2), 0) AS total_hours
 		FROM staff_attendances a WHERE `+where, args...)
 	if err != nil {
 		return err
 	}
-	rows, err := db.JSONRaw(c.Context(), a.DB, `SELECT `+attendanceCols+` FROM staff_attendances a JOIN users u ON u.id = a.staff_id WHERE `+where+
+	rows, err := repositories.JSONRaw(c.Context(), a.DB, `SELECT `+attendanceCols+` FROM staff_attendances a JOIN users u ON u.id = a.staff_id WHERE `+where+
 		fmt.Sprintf(` ORDER BY a.date DESC, a.clock_in_at DESC LIMIT %d OFFSET %d`, pg.PerPage, pg.Offset), args...)
 	if err != nil {
 		return err
 	}
-	return httpx.ListWith(c, rows, httpx.NewMeta(pg, int(num(summary["attendance_count"]))), httpx.Extras{Summary: summary})
+	return helper.ListWith(c, rows, helper.NewMeta(pg, int(num(summary["attendance_count"]))), helper.Extras{Summary: summary})
 }
 
 func (a *API) exportAttendance(c fiber.Ctx) error {
@@ -245,7 +245,7 @@ func (a *API) exportAttendance(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT `+attendanceCols+` FROM staff_attendances a JOIN users u ON u.id = a.staff_id WHERE `+where+` ORDER BY a.date DESC`, args...)
+	rows, err := repositories.JSONRows(c.Context(), a.DB, `SELECT `+attendanceCols+` FROM staff_attendances a JOIN users u ON u.id = a.staff_id WHERE `+where+` ORDER BY a.date DESC`, args...)
 	if err != nil {
 		return err
 	}
@@ -255,58 +255,58 @@ func (a *API) exportAttendance(c fiber.Ctx) error {
 }
 
 func (a *API) getAttendance(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	row, err := db.JSONRow(c.Context(), a.DB, `SELECT `+attendanceCols+` FROM staff_attendances a JOIN users u ON u.id = a.staff_id WHERE a.id=$1 AND a.branch_id=$2`, id, httpx.P(c).BranchID)
+	row, err := repositories.JSONRow(c.Context(), a.DB, `SELECT `+attendanceCols+` FROM staff_attendances a JOIN users u ON u.id = a.staff_id WHERE a.id=$1 AND a.branch_id=$2`, id, helper.P(c).BranchID)
 	if err != nil {
 		return err
 	}
 	if row == nil {
-		return httpx.NotFound("Attendance")
+		return helper.NotFound("Attendance")
 	}
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }
 
 func (a *API) clockIn(c fiber.Ctx) error {
-	body, err := httpx.Body(c)
+	body, err := helper.Body(c)
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	now := a.now()
 	status := "present"
-	if start := httpx.Str(body, "shift_start"); start != "" {
+	if start := helper.Str(body, "shift_start"); start != "" {
 		if t, err := time.ParseInLocation("15:04", start, a.Loc); err == nil && now.Hour()*60+now.Minute() > t.Hour()*60+t.Minute()+10 {
 			status = "late"
 		}
 	}
-	row, err := db.JSONRow(c.Context(), a.DB, `INSERT INTO staff_attendances (branch_id, staff_id, date, clock_in_at, clock_in_photo_url, location, status, note)
+	row, err := repositories.JSONRow(c.Context(), a.DB, `INSERT INTO staff_attendances (branch_id, staff_id, date, clock_in_at, clock_in_photo_url, location, status, note)
 		VALUES ($1,$2,$3::date,now(),NULLIF($4,''),NULLIF($5,''),$6,NULLIF($7,'')) RETURNING id, date, clock_in_at, status`,
-		p.BranchID, p.UserID, now.Format("2006-01-02"), httpx.Str(body, "photo_url"), httpx.Str(body, "location"), status, httpx.Str(body, "note"))
+		p.BranchID, p.UserID, now.Format("2006-01-02"), helper.Str(body, "photo_url"), helper.Str(body, "location"), status, helper.Str(body, "note"))
 	if err != nil {
 		return err
 	}
-	return httpx.Created(c, row)
+	return helper.Created(c, row)
 }
 
 func (a *API) clockOut(c fiber.Ctx) error {
-	body, err := httpx.Body(c)
+	body, err := helper.Body(c)
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
-	row, err := db.JSONRow(c.Context(), a.DB, `UPDATE staff_attendances SET clock_out_at=now(), clock_out_photo_url=NULLIF($3,'')
+	p := helper.P(c)
+	row, err := repositories.JSONRow(c.Context(), a.DB, `UPDATE staff_attendances SET clock_out_at=now(), clock_out_photo_url=NULLIF($3,'')
 		WHERE id = (SELECT id FROM staff_attendances WHERE branch_id=$1 AND staff_id=$2 AND clock_out_at IS NULL ORDER BY clock_in_at DESC LIMIT 1)
-		RETURNING id, date, clock_in_at, clock_out_at, status`, p.BranchID, p.UserID, httpx.Str(body, "photo_url"))
+		RETURNING id, date, clock_in_at, clock_out_at, status`, p.BranchID, p.UserID, helper.Str(body, "photo_url"))
 	if err != nil {
 		return err
 	}
 	if row == nil {
-		return httpx.Conflict("You have not clocked in.")
+		return helper.Conflict("You have not clocked in.")
 	}
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }
 
 // ---------- support access ----------
@@ -326,10 +326,10 @@ func (a *API) registerHelpAccess() {
 		},
 		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id != "" {
-				return httpx.Conflict("Support access cannot be edited; revoke it and create a new one.")
+				return helper.Conflict("Support access cannot be edited; revoke it and create a new one.")
 			}
 			if !h.P.IsOwner() && h.P.Role != "administrator" {
-				return httpx.Forbidden("Only the owner or an administrator can grant support access.")
+				return helper.Forbidden("Only the owner or an administrator can grant support access.")
 			}
 			hours, _ := vals["duration_hours"].(int64)
 			vals["expires_at"] = time.Now().Add(time.Duration(hours) * time.Hour)
@@ -339,30 +339,30 @@ func (a *API) registerHelpAccess() {
 	}
 	a.CRUD.Register(a.addH, "/help-access", res, "list", "create", "read")
 	a.addH("POST", "/help-access/:id/revoke", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		p := httpx.P(c)
+		p := helper.P(c)
 		tag, err := a.DB.Exec(c.Context(), `UPDATE help_accesses SET status='revoked', revoked_at=now(), updated_at=now() WHERE id=$1 AND store_id=$2 AND status='active'`, id, p.StoreID)
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return httpx.Conflict("This access is no longer active.")
+			return helper.Conflict("This access is no longer active.")
 		}
 		row, err := a.CRUD.Fetch(c.Context(), a.DB, res, p, id)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, row)
+		return helper.OK(c, row)
 	})
 	a.addH("GET", "/help-access/accounts", func(c fiber.Ctx) error {
-		raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT id, (CASE WHEN role='owner' THEN 'Owner' ELSE 'Staff' END) || ' (' || email || ')' AS label, email, role
-			FROM users WHERE store_id=$1 AND deleted_at IS NULL ORDER BY role='owner' DESC, name`, httpx.P(c).StoreID)
+		raw, err := repositories.JSONRaw(c.Context(), a.DB, `SELECT id, (CASE WHEN role='owner' THEN 'Owner' ELSE 'Staff' END) || ' (' || email || ')' AS label, email, role
+			FROM users WHERE store_id=$1 AND deleted_at IS NULL ORDER BY role='owner' DESC, name`, helper.P(c).StoreID)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, raw)
+		return helper.OK(c, raw)
 	})
 }

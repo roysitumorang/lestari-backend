@@ -11,11 +11,11 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 // startJob records a background job and runs fn in a goroutine. It returns the job id.
@@ -65,8 +65,8 @@ func (a *API) registerInventory() {
 	stock := a.stockResource()
 	a.CRUD.Register(a.addH, "/inventory/stocks", stock, "list", "export")
 	a.addH("GET", "/inventory/stocks/import-template", func(c fiber.Ctx) error {
-		b, err := export.XLSX(httpx.Lang(c), "Stock", []export.Column{{Key: "sku", Label: "sku*"}, {Key: "stock", Label: "stock*"}, {Key: "unit_cost", Label: "unit_cost"}, {Key: "note", Label: "note"}},
-			[]map[string]any{{"sku": "P000001", "stock": 10.0, "unit_cost": 5000.0, "note": httpx.T(c, "Initial count")}})
+		b, err := export.XLSX(helper.Lang(c), "Stock", []export.Column{{Key: "sku", Label: "sku*"}, {Key: "stock", Label: "stock*"}, {Key: "unit_cost", Label: "unit_cost"}, {Key: "note", Label: "note"}},
+			[]map[string]any{{"sku": "P000001", "stock": 10.0, "unit_cost": 5000.0, "note": helper.T(c, "Initial count")}})
 		if err != nil {
 			return err
 		}
@@ -80,39 +80,39 @@ func (a *API) registerInventory() {
 }
 
 func (a *API) adjustStock(c fiber.Ctx) error {
-	pid, err := httpx.ParamID(c, "product_id")
+	pid, err := helper.ParamID(c, "product_id")
 	if err != nil {
 		return err
 	}
-	body, err := httpx.Body(c)
+	body, err := helper.Body(c)
 	if err != nil {
 		return err
 	}
-	mode := httpx.Str(body, "mode")
-	qty, ok := httpx.Num(body, "quantity")
-	v := &httpx.Validation{}
+	mode := helper.Str(body, "mode")
+	qty, ok := helper.Num(body, "quantity")
+	v := &helper.Validation{}
 	if mode != "set" && mode != "add" && mode != "subtract" {
 		v.Add("mode", "Must be one of: set, add, subtract.")
 	}
 	if !ok || qty < 0 {
 		v.Add("quantity", "Enter a quantity of 0 or more.")
 	}
-	reason := httpx.Str(body, "reason")
+	reason := helper.Str(body, "reason")
 	if reason != "" && !contains([]string{"correction", "damaged", "expired", "lost", "received", "other"}, reason) {
 		v.Add("reason", "Unknown reason.")
 	}
 	if err := v.Err(); err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	var cost *float64
-	if uc, ok := httpx.Num(body, "unit_cost"); ok && mode == "add" {
+	if uc, ok := helper.Num(body, "unit_cost"); ok && mode == "add" {
 		cost = &uc
 	}
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		var cur float64
 		if err := tx.QueryRow(c.Context(), `SELECT stock FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL FOR UPDATE`, pid, p.BranchID).Scan(&cur); err != nil {
-			return httpx.NotFound("Product")
+			return helper.NotFound("Product")
 		}
 		change := qty
 		switch mode {
@@ -124,7 +124,7 @@ func (a *API) adjustStock(c fiber.Ctx) error {
 		if change == 0 {
 			return nil
 		}
-		note := strings.TrimSpace(httpx.Str(body, "note"))
+		note := strings.TrimSpace(helper.Str(body, "note"))
 		if reason != "" {
 			note = strings.TrimSpace(reason + ": " + note)
 		}
@@ -145,28 +145,28 @@ func (a *API) adjustStock(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }
 
 func (a *API) stockMovements(c fiber.Ctx) error {
-	pid, err := httpx.ParamID(c, "product_id")
+	pid, err := helper.ParamID(c, "product_id")
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
-	pg := httpx.Paging(c, 50)
+	p := helper.P(c)
+	pg := helper.Paging(c, 50)
 	where := `m.product_id=$1 AND m.branch_id=$2 AND (NULLIF($3,'') IS NULL OR m.created_at::date >= NULLIF($3,'')::date) AND (NULLIF($4,'') IS NULL OR m.created_at::date <= NULLIF($4,'')::date)`
 	args := []any{pid, p.BranchID, c.Query("start_date"), c.Query("end_date")}
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM stock_movements m WHERE `+where, args...).Scan(&total); err != nil {
 		return err
 	}
-	raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT m.id, m.created_at, m.type, m.reference, m.quantity_change, m.stock_after, m.unit_cost, m.actor_name, m.note
+	raw, err := repositories.JSONRaw(c.Context(), a.DB, `SELECT m.id, m.created_at, m.type, m.reference, m.quantity_change, m.stock_after, m.unit_cost, m.actor_name, m.note
 		FROM stock_movements m WHERE `+where+fmt.Sprintf(` ORDER BY m.id DESC LIMIT %d OFFSET %d`, pg.PerPage, pg.Offset), args...)
 	if err != nil {
 		return err
 	}
-	return httpx.List(c, raw, httpx.NewMeta(pg, total))
+	return helper.List(c, raw, helper.NewMeta(pg, total))
 }
 
 func (a *API) importStock(c fiber.Ctx) error {
@@ -174,12 +174,12 @@ func (a *API) importStock(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	res := crud.ImportResult{Errors: []crud.ImportError{}}
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		for i, r := range rows {
-			sku := httpx.Str(r, "sku")
-			qty, ok := httpx.Num(r, "stock")
+			sku := helper.Str(r, "sku")
+			qty, ok := helper.Num(r, "stock")
 			if sku == "" || !ok {
 				res.Failed++
 				res.Errors = append(res.Errors, crud.ImportError{Row: i + 2, Message: "sku and stock are required"})
@@ -193,14 +193,14 @@ func (a *API) importStock(c fiber.Ctx) error {
 				continue
 			}
 			var cost *float64
-			if uc, ok := httpx.Num(r, "unit_cost"); ok {
+			if uc, ok := helper.Num(r, "unit_cost"); ok {
 				cost = &uc
 				if _, err := tx.Exec(c.Context(), `UPDATE products SET purchase_price=$2 WHERE id=$1`, id, uc); err != nil {
 					return err
 				}
 			}
 			if qty != cur {
-				if _, err := productStock(c.Context(), tx, p.BranchID, id, qty-cur, "adjustment", "Stock import", cost, p.UserID, p.Name, httpx.Str(r, "note")); err != nil {
+				if _, err := productStock(c.Context(), tx, p.BranchID, id, qty-cur, "adjustment", "Stock import", cost, p.UserID, p.Name, helper.Str(r, "note")); err != nil {
 					return err
 				}
 			}
@@ -211,11 +211,11 @@ func (a *API) importStock(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, res)
+	return helper.OK(c, res)
 }
 
 func (a *API) recalculateStock(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	branch := p.BranchID
 	id, err := a.startJob(p.StoreID, "stock_recalculate", fiber.Map{"branch_id": branch}, func(ctx context.Context) (any, error) {
 		tag, err := a.DB.Exec(ctx, `UPDATE products pr SET stock = s.total, updated_at = now()
@@ -229,7 +229,7 @@ func (a *API) recalculateStock(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"job_id": id, "status": "queued"})
+	return helper.OK(c, fiber.Map{"job_id": id, "status": "queued"})
 }
 
 // ---------- stock opname ----------
@@ -251,14 +251,14 @@ func (a *API) opnameResource() *crud.Resource {
 		},
 		BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 			if id != "" {
-				return httpx.Conflict("A stock opname cannot be edited; delete it and create a new one.")
+				return helper.Conflict("A stock opname cannot be edited; delete it and create a new one.")
 			}
 			code, err := a.nextNumber(ctx, h.Tx, "SO", "stock_opnames", "code", "branch_id", h.P.BranchID)
 			vals["code"] = code
 			return err
 		},
 		AfterWrite: func(ctx context.Context, h *crud.Ctx, id string, created bool) error {
-			return a.saveOpnameItems(ctx, h.Tx, h.P.BranchID, id, httpx.Items(h.Body, "items"))
+			return a.saveOpnameItems(ctx, h.Tx, h.P.BranchID, id, helper.Items(h.Body, "items"))
 		},
 		BeforeDelete: func(ctx context.Context, h *crud.Ctx, id string) error {
 			var status string
@@ -266,12 +266,12 @@ func (a *API) opnameResource() *crud.Resource {
 				return err
 			}
 			if status == "approved" {
-				return httpx.Conflict("An approved stock opname has already changed stock and cannot be deleted.")
+				return helper.Conflict("An approved stock opname has already changed stock and cannot be deleted.")
 			}
 			return nil
 		},
-		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
-			items, err := db.JSONRows(ctx, q, `SELECT i.product_id, i.product_name, p.sku, i.system_stock, i.physical_stock, i.physical_stock - i.system_stock AS difference, i.unit_cost, i.note
+		Detail: func(ctx context.Context, q repositories.Querier, p *helper.Principal, row map[string]any) error {
+			items, err := repositories.JSONRows(ctx, q, `SELECT i.product_id, i.product_name, p.sku, i.system_stock, i.physical_stock, i.physical_stock - i.system_stock AS difference, i.unit_cost, i.note
 				FROM stock_opname_items i LEFT JOIN products p ON p.id = i.product_id WHERE i.opname_id = $1 ORDER BY i.id`, row["id"])
 			row["items"] = items
 			return err
@@ -280,11 +280,11 @@ func (a *API) opnameResource() *crud.Resource {
 }
 
 func (a *API) saveOpnameItems(ctx context.Context, tx pgx.Tx, branchID, opnameID string, items []map[string]any) error {
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	n := 0
 	for i, it := range items {
-		pid, ok := httpx.UUID(it, "product_id")
-		qty, qok := httpx.Num(it, "physical_stock")
+		pid, ok := helper.UUID(it, "product_id")
+		qty, qok := helper.Num(it, "physical_stock")
 		if !ok && !qok {
 			continue // empty row
 		}
@@ -299,7 +299,7 @@ func (a *API) saveOpnameItems(ctx context.Context, tx pgx.Tx, branchID, opnameID
 			continue
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO stock_opname_items (opname_id, product_id, product_name, system_stock, physical_stock, unit_cost, note) VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''))`,
-			opnameID, pid, name, stock, qty, cost, httpx.Str(it, "note")); err != nil {
+			opnameID, pid, name, stock, qty, cost, helper.Str(it, "note")); err != nil {
 			return err
 		}
 		n++
@@ -314,18 +314,18 @@ func (a *API) registerOpnames() {
 	res := a.opnameResource()
 	a.CRUD.Register(a.addH, "/stock-opnames", res, "list", "create", "read", "delete", "bulk_delete")
 	a.addH("POST", "/stock-opnames/:id/approve", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		p := httpx.P(c)
+		p := helper.P(c)
 		err = a.tx(c.Context(), func(tx pgx.Tx) error {
 			var code, status string
 			if err := tx.QueryRow(c.Context(), `SELECT code, status FROM stock_opnames WHERE id=$1 AND branch_id=$2 FOR UPDATE`, id, p.BranchID).Scan(&code, &status); err != nil {
-				return httpx.NotFound("Stock opname")
+				return helper.NotFound("Stock opname")
 			}
 			if status != "pending" {
-				return httpx.Conflict("This stock opname was already {status}.", "status", i18n.Tr(status))
+				return helper.Conflict("This stock opname was already {status}.", "status", i18n.Tr(status))
 			}
 			rows, err := tx.Query(c.Context(), `SELECT i.product_id, i.physical_stock, p.stock FROM stock_opname_items i JOIN products p ON p.id = i.product_id WHERE i.opname_id=$1`, id)
 			if err != nil {
@@ -362,38 +362,38 @@ func (a *API) registerOpnames() {
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, row)
+		return helper.OK(c, row)
 	})
 	a.addH("POST", "/stock-opnames/:id/reject", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		body, err := httpx.Body(c)
+		body, err := helper.Body(c)
 		if err != nil {
 			return err
 		}
-		p := httpx.P(c)
+		p := helper.P(c)
 		tag, err := a.DB.Exec(c.Context(), `UPDATE stock_opnames SET status='rejected', reject_reason=NULLIF($3,''), decided_at=now(), updated_at=now() WHERE id=$1 AND branch_id=$2 AND status='pending'`,
-			id, p.BranchID, httpx.Str(body, "reason"))
+			id, p.BranchID, helper.Str(body, "reason"))
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
-			return httpx.Conflict("Only a pending stock opname can be rejected.")
+			return helper.Conflict("Only a pending stock opname can be rejected.")
 		}
 		row, err := a.CRUD.Fetch(c.Context(), a.DB, res, p, id)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, row)
+		return helper.OK(c, row)
 	})
 	a.addH("GET", "/stock-opnames/:id/export", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		row, err := a.CRUD.Fetch(c.Context(), a.DB, res, httpx.P(c), id)
+		row, err := a.CRUD.Fetch(c.Context(), a.DB, res, helper.P(c), id)
 		if err != nil {
 			return err
 		}
@@ -402,7 +402,7 @@ func (a *API) registerOpnames() {
 		return export.Write(c, "stock-opname-"+strings.ReplaceAll(fmt.Sprint(row["code"]), "/", "-"), "Stock opname "+fmt.Sprint(row["code"]), cols, items)
 	})
 	a.addH("GET", "/stock-opnames/import-template", func(c fiber.Ctx) error {
-		b, err := export.XLSX(httpx.Lang(c), "Stock opname", []export.Column{{Key: "sku", Label: "sku*"}, {Key: "physical_stock", Label: "physical_stock*"}, {Key: "note", Label: "note"}},
+		b, err := export.XLSX(helper.Lang(c), "Stock opname", []export.Column{{Key: "sku", Label: "sku*"}, {Key: "physical_stock", Label: "physical_stock*"}, {Key: "note", Label: "note"}},
 			[]map[string]any{{"sku": "P000001", "physical_stock": 12.0}})
 		if err != nil {
 			return err
@@ -414,28 +414,28 @@ func (a *API) registerOpnames() {
 		if err != nil {
 			return err
 		}
-		p := httpx.P(c)
+		p := helper.P(c)
 		items := []any{}
 		result := crud.ImportResult{Errors: []crud.ImportError{}}
 		for i, r := range rows {
 			var pid string
-			if err := a.DB.QueryRow(c.Context(), `SELECT id FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND deleted_at IS NULL`, p.BranchID, httpx.Str(r, "sku")).Scan(&pid); err != nil {
+			if err := a.DB.QueryRow(c.Context(), `SELECT id FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND deleted_at IS NULL`, p.BranchID, helper.Str(r, "sku")).Scan(&pid); err != nil {
 				result.Failed++
-				result.Errors = append(result.Errors, crud.ImportError{Row: i + 2, Message: "No product with SKU " + httpx.Str(r, "sku")})
+				result.Errors = append(result.Errors, crud.ImportError{Row: i + 2, Message: "No product with SKU " + helper.Str(r, "sku")})
 				continue
 			}
-			qty, _ := httpx.Num(r, "physical_stock")
-			items = append(items, map[string]any{"product_id": pid, "physical_stock": qty, "note": httpx.Str(r, "note")})
+			qty, _ := helper.Num(r, "physical_stock")
+			items = append(items, map[string]any{"product_id": pid, "physical_stock": qty, "note": helper.Str(r, "note")})
 		}
 		if len(items) > 0 {
 			by := c.FormValue("performed_by_name", p.Name)
-			body := map[string]any{"opname_date": a.today(), "performed_by_name": by, "performed_by_role": p.Role, "note": httpx.T(c, "Imported from {file}", "file", c.FormValue("filename", httpx.T(c, "spreadsheet"))), "items": items}
+			body := map[string]any{"opname_date": a.today(), "performed_by_name": by, "performed_by_role": p.Role, "note": helper.T(c, "Imported from {file}", "file", c.FormValue("filename", helper.T(c, "spreadsheet"))), "items": items}
 			if _, err := a.CRUD.Save(c, a.opnameResource(), body, ""); err != nil {
 				return err
 			}
 			result.Created = 1
 		}
-		return httpx.OK(c, result)
+		return helper.OK(c, result)
 	})
 }
 

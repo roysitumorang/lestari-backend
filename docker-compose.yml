@@ -17,7 +17,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
     environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/lestari?sslmode=disable
+      DB_WRITE_URL: postgres://postgres:postgres@db:5432/lestari?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}

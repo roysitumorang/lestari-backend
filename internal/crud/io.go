@@ -9,9 +9,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
 )
 
 // ExportColumns lists scalar fields plus referenced labels.
@@ -74,7 +74,7 @@ func (e *Engine) ImportTemplate(r *Resource) fiber.Handler {
 				example[f.Name] = "2026-01-31"
 			}
 		}
-		b, err := export.XLSX(httpx.Lang(c), r.Name, cols, []map[string]any{example})
+		b, err := export.XLSX(helper.Lang(c), r.Name, cols, []map[string]any{example})
 		if err != nil {
 			return err
 		}
@@ -99,7 +99,7 @@ type ImportError struct {
 func ImportRows(c fiber.Ctx) ([]map[string]any, error) {
 	fh, err := c.FormFile("file")
 	if err != nil {
-		return nil, httpx.Invalid("file", "Choose a .xlsx or .csv file.")
+		return nil, helper.Invalid("file", "Choose a .xlsx or .csv file.")
 	}
 	f, err := fh.Open()
 	if err != nil {
@@ -108,7 +108,7 @@ func ImportRows(c fiber.Ctx) ([]map[string]any, error) {
 	defer f.Close()
 	head, rows, err := export.ReadTable(fh.Filename, f)
 	if err != nil {
-		return nil, httpx.Invalid("file", err.Error())
+		return nil, helper.Invalid("file", err.Error())
 	}
 	out := make([]map[string]any, 0, len(rows))
 	for _, rec := range rows {
@@ -144,7 +144,7 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 			rowNo := i + 2 // header is row 1
 			var id string
 			if mode == "update" && r.ImportKey != "" {
-				key := httpx.Str(row, r.ImportKey)
+				key := helper.Str(row, r.ImportKey)
 				if key == "" {
 					res.Failed++
 					res.Errors = append(res.Errors, ImportError{rowNo, r.ImportKey + " is required to update"})
@@ -152,7 +152,7 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 				}
 				f, _ := r.field(r.ImportKey)
 				b := &Builder{}
-				where := append(r.baseWhere(b, httpx.P(c)), "lower(t."+f.col()+") = lower("+b.Add(key)+")")
+				where := append(r.baseWhere(b, helper.P(c)), "lower(t."+f.col()+") = lower("+b.Add(key)+")")
 				if err := e.DB.QueryRow(ctx, "SELECT t.id FROM "+r.Table+" t WHERE "+strings.Join(where, " AND ")+" LIMIT 1", b.Args...).Scan(&id); err != nil {
 					res.Failed++
 					res.Errors = append(res.Errors, ImportError{rowNo, "No " + strings.ToLower(r.Singular) + " with " + r.ImportKey + " " + key})
@@ -161,7 +161,7 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 			}
 			if _, err := e.SaveCtx(ctx, c, r, row, id); err != nil {
 				res.Failed++
-				res.Errors = append(res.Errors, ImportError{rowNo, describe(httpx.Lang(c), err)})
+				res.Errors = append(res.Errors, ImportError{rowNo, describe(helper.Lang(c), err)})
 				continue
 			}
 			if id != "" {
@@ -170,12 +170,12 @@ func (e *Engine) Import(r *Resource) fiber.Handler {
 				res.Created++
 			}
 		}
-		return httpx.OK(c, res)
+		return helper.OK(c, res)
 	}
 }
 
 func describe(l i18n.Lang, err error) string {
-	he := &httpx.Error{}
+	he := &helper.Error{}
 	if errors.As(err, &he) {
 		if len(he.Fields) > 0 {
 			var parts []string

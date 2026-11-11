@@ -7,10 +7,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/roysitumorang/lestari-backend/internal/auth"
+	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/middlewares"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 type ppobItem struct {
@@ -53,7 +53,7 @@ var ppobCatalog = []ppobItem{
 	postpaid("internet_tv", "BIZNET", "Biznet Home", 2500),
 }
 
-func ppobBalance(ctx context.Context, q db.Querier, branchID string) (float64, error) {
+func ppobBalance(ctx context.Context, q repositories.Querier, branchID string) (float64, error) {
 	var bal float64
 	err := q.QueryRow(ctx, `SELECT COALESCE((SELECT sum(amount) FROM ppob_deposits WHERE branch_id=$1 AND status='success'), 0)
 		- COALESCE((SELECT sum(base_price) FROM ppob_transactions WHERE branch_id=$1 AND status IN ('success','pending')), 0)`, branchID).Scan(&bal)
@@ -86,14 +86,14 @@ func (a *API) registerPPOB() {
 			ImportKey: "product_code", Fields: fields,
 			BeforeWrite: func(ctx context.Context, h *crud.Ctx, vals map[string]any, id string) error {
 				if id == "" {
-					return httpx.Forbidden("New PPOB products come from the provider catalog.")
+					return helper.Forbidden("New PPOB products come from the provider catalog.")
 				}
 				if k == "prepaid" {
 					if sp, ok := vals["selling_price"].(float64); ok {
 						var base float64
 						_ = h.Tx.QueryRow(ctx, `SELECT COALESCE(base_price,0) FROM ppob_prices WHERE id=$1`, id).Scan(&base)
 						if sp < base {
-							return httpx.Invalid("selling_price", "The selling price cannot be below the cost of {cost}.", "cost", trimNum(base))
+							return helper.Invalid("selling_price", "The selling price cannot be below the cost of {cost}.", "cost", trimNum(base))
 						}
 					}
 				}
@@ -107,20 +107,20 @@ func (a *API) registerPPOB() {
 const depositCols = `id, reference_id, type, payment_method, amount, admin_fee, balance_after, status, payment_url, payment_instructions, payment_proof_url, expires_at, created_at`
 
 func (a *API) listDeposits(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	_, _ = a.DB.Exec(c.Context(), `UPDATE ppob_deposits SET status='expired', updated_at=now() WHERE branch_id=$1 AND status='pending' AND expires_at < now()`, p.BranchID)
-	start, end, err := httpx.DateRange(c, a.Loc)
+	start, end, err := helper.DateRange(c, a.Loc)
 	if err != nil {
 		return err
 	}
-	pg := httpx.Paging(c, 50)
+	pg := helper.Paging(c, 50)
 	where := `branch_id=$1 AND created_at::date BETWEEN $2::date AND $3::date AND ($4 = '' OR reference_id ILIKE '%'||$4||'%' OR COALESCE(payment_method,'') ILIKE '%'||$4||'%')`
 	args := []any{p.BranchID, start, end, c.Query("q")}
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM ppob_deposits WHERE `+where, args...).Scan(&total); err != nil {
 		return err
 	}
-	rows, err := db.JSONRaw(c.Context(), a.DB, `SELECT `+depositCols+` FROM ppob_deposits WHERE `+where+fmt.Sprintf(` ORDER BY created_at DESC LIMIT %d OFFSET %d`, pg.PerPage, pg.Offset), args...)
+	rows, err := repositories.JSONRaw(c.Context(), a.DB, `SELECT `+depositCols+` FROM ppob_deposits WHERE `+where+fmt.Sprintf(` ORDER BY created_at DESC LIMIT %d OFFSET %d`, pg.PerPage, pg.Offset), args...)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (a *API) listDeposits(c fiber.Ctx) error {
 	}
 	var trx float64
 	_ = a.DB.QueryRow(c.Context(), `SELECT COALESCE(sum(selling_price),0) FROM ppob_transactions WHERE branch_id=$1 AND status='success'`, p.BranchID).Scan(&trx)
-	return httpx.ListWith(c, rows, httpx.NewMeta(pg, total), httpx.Extras{Summary: fiber.Map{"balance": bal, "transaction_total": trx}})
+	return helper.ListWith(c, rows, helper.NewMeta(pg, total), helper.Extras{Summary: fiber.Map{"balance": bal, "transaction_total": trx}})
 }
 
 func (a *API) createDeposit(c fiber.Ctx) error {
@@ -139,11 +139,11 @@ func (a *API) createDeposit(c fiber.Ctx) error {
 		PaymentMethod string  `json:"payment_method"`
 		VoucherCode   string  `json:"voucher_code"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	p := httpx.P(c)
-	v := &httpx.Validation{}
+	p := helper.P(c)
+	v := &helper.Validation{}
 	if in.Amount < 100000 {
 		v.Add("amount", "The minimum top-up is Rp 100,000.")
 	}
@@ -168,35 +168,35 @@ func (a *API) createDeposit(c fiber.Ctx) error {
 		var ok bool
 		_ = a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM vouchers WHERE upper(code)=upper($1) AND reward_type='ppob_free_fee' AND used_count < max_uses AND (expires_at IS NULL OR expires_at > now()))`, in.VoucherCode).Scan(&ok)
 		if !ok {
-			return httpx.Invalid("voucher_code", "This voucher is not valid.")
+			return helper.Invalid("voucher_code", "This voucher is not valid.")
 		}
 		fee = 0
 		_, _ = a.DB.Exec(c.Context(), `UPDATE vouchers SET used_count = used_count + 1 WHERE upper(code)=upper($1)`, in.VoucherCode)
 	}
-	ref := "PPOB-" + a.now().Format("060102") + "-" + auth.RandomDigits(6)
-	url, instructions, err := a.Payments.Create(c.Context(), ref, in.Amount+fee, in.PaymentMethod, httpx.Lang(c))
+	ref := "PPOB-" + a.now().Format("060102") + "-" + middlewares.RandomDigits(6)
+	url, instructions, err := a.Payments.Create(c.Context(), ref, in.Amount+fee, in.PaymentMethod, helper.Lang(c))
 	if err != nil {
 		return err
 	}
-	row, err := db.JSONRow(c.Context(), a.DB, `INSERT INTO ppob_deposits (branch_id, reference_id, type, payment_method, amount, admin_fee, status, payment_url, payment_instructions, expires_at)
+	row, err := repositories.JSONRow(c.Context(), a.DB, `INSERT INTO ppob_deposits (branch_id, reference_id, type, payment_method, amount, admin_fee, status, payment_url, payment_instructions, expires_at)
 		VALUES ($1,$2,'top_up',$3,$4,$5,'pending',NULLIF($6,''),$7, now() + interval '24 hours') RETURNING `+depositCols,
 		p.BranchID, ref, in.PaymentMethod, in.Amount, fee, url, instructions)
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }
 
 func (a *API) deposit(c fiber.Ctx, id string) (map[string]any, error) {
-	row, err := db.JSONRow(c.Context(), a.DB, `SELECT `+depositCols+` FROM ppob_deposits WHERE id=$1 AND branch_id=$2`, id, httpx.P(c).BranchID)
+	row, err := repositories.JSONRow(c.Context(), a.DB, `SELECT `+depositCols+` FROM ppob_deposits WHERE id=$1 AND branch_id=$2`, id, helper.P(c).BranchID)
 	if err == nil && row == nil {
-		err = httpx.NotFound("Deposit")
+		err = helper.NotFound("Deposit")
 	}
 	return row, err
 }
 
 func (a *API) depositProof(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
@@ -205,7 +205,7 @@ func (a *API) depositProof(c fiber.Ctx) error {
 		return err
 	}
 	if d["status"] != "pending" {
-		return httpx.Conflict("Only a pending top-up accepts a payment proof.")
+		return helper.Conflict("Only a pending top-up accepts a payment proof.")
 	}
 	up, err := a.saveUpload(c, "file", "payment_proof")
 	if err != nil {
@@ -218,26 +218,26 @@ func (a *API) depositProof(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, d)
+	return helper.OK(c, d)
 }
 
 func (a *API) cancelDeposit(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	tag, err := a.DB.Exec(c.Context(), `UPDATE ppob_deposits SET status='cancelled', updated_at=now() WHERE id=$1 AND branch_id=$2 AND status='pending'`, id, httpx.P(c).BranchID)
+	tag, err := a.DB.Exec(c.Context(), `UPDATE ppob_deposits SET status='cancelled', updated_at=now() WHERE id=$1 AND branch_id=$2 AND status='pending'`, id, helper.P(c).BranchID)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return httpx.Conflict("Only a pending top-up can be cancelled.")
+		return helper.Conflict("Only a pending top-up can be cancelled.")
 	}
 	d, err := a.deposit(c, id)
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, d)
+	return helper.OK(c, d)
 }
 
 // sellPPOB records a PPOB sale made by the cashier and charges the branch balance.
@@ -247,12 +247,12 @@ func (a *API) sellPPOB(c fiber.Ctx) error {
 		CustomerNumber string  `json:"customer_number"`
 		BillAmount     float64 `json:"bill_amount"` // postpaid bill from the biller
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	if in.CustomerNumber == "" {
-		return httpx.Invalid("customer_number", "Required")
+		return helper.Invalid("customer_number", "Required")
 	}
 	var out map[string]any
 	err := a.tx(c.Context(), func(tx pgx.Tx) error {
@@ -262,14 +262,14 @@ func (a *API) sellPPOB(c fiber.Ctx) error {
 		var active bool
 		if err := tx.QueryRow(ctx, `SELECT kind, product_name, base_price, selling_price, base_admin_fee, admin_fee, is_active FROM ppob_prices WHERE id=$1 AND branch_id=$2`, in.PriceID, p.BranchID).
 			Scan(&kind, &name, &base, &sell, &baseFee, &fee, &active); err != nil || !active {
-			return httpx.Invalid("price_id", "This PPOB product is not available.")
+			return helper.Invalid("price_id", "This PPOB product is not available.")
 		}
 		var cost, price float64
 		if kind == "prepaid" {
 			cost, price = *base, *sell
 		} else {
 			if in.BillAmount <= 0 {
-				return httpx.Invalid("bill_amount", "Enter the bill amount.")
+				return helper.Invalid("bill_amount", "Enter the bill amount.")
 			}
 			cost, price = in.BillAmount+*baseFee, in.BillAmount+*fee
 		}
@@ -278,10 +278,10 @@ func (a *API) sellPPOB(c fiber.Ctx) error {
 			return err
 		}
 		if bal < cost {
-			return httpx.PaymentRequired("insufficient_balance", "The PPOB balance is too low. Top up first.")
+			return helper.PaymentRequired("insufficient_balance", "The PPOB balance is too low. Top up first.")
 		}
-		ref := "TRX" + a.now().Format("060102150405") + auth.RandomDigits(3)
-		out, err = db.JSONRow(ctx, tx, `INSERT INTO ppob_transactions (branch_id, reference_id, product_name, customer_number, base_price, selling_price, cashier_id, cashier_name, status)
+		ref := "TRX" + a.now().Format("060102150405") + middlewares.RandomDigits(3)
+		out, err = repositories.JSONRow(ctx, tx, `INSERT INTO ppob_transactions (branch_id, reference_id, product_name, customer_number, base_price, selling_price, cashier_id, cashier_name, status)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'success') RETURNING id, reference_id, product_name, customer_number, base_price, selling_price, selling_price - base_price AS profit, status, created_at`,
 			p.BranchID, ref, name, in.CustomerNumber, cost, price, p.UserID, p.Name)
 		return err
@@ -289,5 +289,5 @@ func (a *API) sellPPOB(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Created(c, out)
+	return helper.Created(c, out)
 }

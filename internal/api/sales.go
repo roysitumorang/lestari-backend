@@ -13,11 +13,11 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 func dateFrom(col string) crud.Filter {
@@ -65,13 +65,13 @@ func (a *API) saleResource() *crud.Resource {
 			{Name: "due_date", Kind: crud.Date, ReadOnly: true},
 		},
 		Filters: []crud.Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
-		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
-			items, err := db.JSONRows(ctx, q, `SELECT id, product_id, product_name, variant_name, quantity, unit_price, discount_amount + promotion_discount AS discount_amount, subtotal, points_earned, points_redeemed
+		Detail: func(ctx context.Context, q repositories.Querier, p *helper.Principal, row map[string]any) error {
+			items, err := repositories.JSONRows(ctx, q, `SELECT id, product_id, product_name, variant_name, quantity, unit_price, discount_amount + promotion_discount AS discount_amount, subtotal, points_earned, points_redeemed
 				FROM sale_items WHERE sale_id = $1 ORDER BY id`, row["id"])
 			if err != nil {
 				return err
 			}
-			fees, err := db.JSONRows(ctx, q, `SELECT fee_name, amount FROM sale_fees WHERE sale_id = $1 ORDER BY id`, row["id"])
+			fees, err := repositories.JSONRows(ctx, q, `SELECT fee_name, amount FROM sale_fees WHERE sale_id = $1 ORDER BY id`, row["id"])
 			row["items"], row["fees"] = items, fees
 			return err
 		},
@@ -144,7 +144,7 @@ func (a *API) loadProduct(ctx context.Context, tx pgx.Tx, branchID, id string) (
 		FROM products WHERE id=$1 AND branch_id=$2 AND deleted_at IS NULL FOR UPDATE`, id, branchID).
 		Scan(&p.ID, &p.Name, &p.CategoryID, &p.Price, &p.Cost, &p.PriceType, &p.DiscType, &p.DiscValue, &ws, &tp, &ing, &va, &p.Track, &p.Stock, &pe, &pr)
 	if err != nil {
-		return nil, httpx.Invalid("items", "Product {id} not found.", "id", id)
+		return nil, helper.Invalid("items", "Product {id} not found.", "id", id)
 	}
 	_ = json.Unmarshal(ws, &p.Wholesale)
 	_ = json.Unmarshal(tp, &p.TypePrices)
@@ -163,11 +163,11 @@ func (a *API) loadProduct(ctx context.Context, tx pgx.Tx, branchID, id string) (
 func (p *productRow) priceFor(qty float64, variant string, customerTypeID string) (price, cost float64) {
 	price, cost = p.Price, p.Cost
 	for _, v := range p.Variants {
-		if variant != "" && strings.EqualFold(httpx.Str(v, "name"), variant) {
-			if x, ok := httpx.Num(v, "selling_price"); ok {
+		if variant != "" && strings.EqualFold(helper.Str(v, "name"), variant) {
+			if x, ok := helper.Num(v, "selling_price"); ok {
 				price = x
 			}
-			if x, ok := httpx.Num(v, "purchase_price"); ok {
+			if x, ok := helper.Num(v, "purchase_price"); ok {
 				cost = x
 			}
 		}
@@ -176,16 +176,16 @@ func (p *productRow) priceFor(qty float64, variant string, customerTypeID string
 	case "wholesale":
 		best := -1.0
 		for _, t := range p.Wholesale {
-			mq, _ := httpx.Num(t, "min_quantity")
-			pr, ok := httpx.Num(t, "price")
+			mq, _ := helper.Num(t, "min_quantity")
+			pr, ok := helper.Num(t, "price")
 			if ok && qty >= mq && mq > best {
 				best, price = mq, pr
 			}
 		}
 	case "customer_type":
 		for _, t := range p.TypePrices {
-			if id, _ := httpx.UUID(t, "customer_type_id"); id == customerTypeID && customerTypeID != "" {
-				if pr, ok := httpx.Num(t, "price"); ok {
+			if id, _ := helper.UUID(t, "customer_type_id"); id == customerTypeID && customerTypeID != "" {
+				if pr, ok := helper.Num(t, "price"); ok {
 					price = pr
 				}
 			}
@@ -206,11 +206,11 @@ func discountOf(typ *string, val *float64, base float64) float64 {
 
 func (a *API) createSale(c fiber.Ctx) error {
 	var in saleIn
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	p := httpx.P(c)
-	v := &httpx.Validation{}
+	p := helper.P(c)
+	v := &helper.Validation{}
 	if len(in.Items) == 0 {
 		v.Add("items", "Add at least one item.")
 	}
@@ -257,7 +257,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 				FROM customers cu LEFT JOIN customer_types ct ON ct.id = cu.customer_type_id WHERE cu.id=$1 AND cu.branch_id=$2`, *in.CustomerID, p.BranchID).
 				Scan(&custTypeID, &custTypeName, &custDiscType, &custDiscVal, &mult)
 			if err != nil {
-				return httpx.Invalid("customer_id", "Customer not found.")
+				return helper.Invalid("customer_id", "Customer not found.")
 			}
 		}
 		promos, err := a.activePromotions(ctx, tx, p.BranchID, createdAt, custTypeID)
@@ -284,7 +284,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 			}
 			wanted[prod.ID] += it.Quantity
 			if prod.Track && len(prod.Ingredients) == 0 && !allowNegative && wanted[prod.ID] > prod.Stock {
-				return httpx.Invalid("items", "Only {qty} of {product} left in stock.", "qty", trimNum(prod.Stock), "product", prod.Name)
+				return helper.Invalid("items", "Only {qty} of {product} left in stock.", "qty", trimNum(prod.Stock), "product", prod.Name)
 			}
 			price, cost := prod.priceFor(it.Quantity, it.VariantName, custTypeID)
 			if it.UnitPrice != nil {
@@ -316,8 +316,8 @@ func (a *API) createSale(c fiber.Ctx) error {
 			if len(prod.Ingredients) > 0 {
 				cost = 0
 				for _, ing := range prod.Ingredients {
-					iid, _ := httpx.UUID(ing, "product_id")
-					iq, _ := httpx.Num(ing, "quantity")
+					iid, _ := helper.UUID(ing, "product_id")
+					iq, _ := helper.Num(ing, "quantity")
 					var icost float64
 					_ = tx.QueryRow(ctx, `SELECT purchase_price FROM products WHERE id=$1 AND branch_id=$2`, iid, p.BranchID).Scan(&icost)
 					cost += icost * iq
@@ -346,14 +346,14 @@ func (a *API) createSale(c fiber.Ctx) error {
 		}
 		if redeemed > 0 {
 			if in.CustomerID == nil {
-				return httpx.Invalid("points_redeemed", "Choose a customer to redeem points.")
+				return helper.Invalid("points_redeemed", "Choose a customer to redeem points.")
 			}
 			var bal int
 			if err := tx.QueryRow(ctx, `SELECT points FROM customers WHERE id=$1`, *in.CustomerID).Scan(&bal); err != nil {
 				return err
 			}
 			if bal < redeemed {
-				return httpx.Invalid("points_redeemed", "The customer has only {n} points.", "n", bal)
+				return helper.Invalid("points_redeemed", "The customer has only {n} points.", "n", bal)
 			}
 			if in.PointsRedeemed > 0 {
 				invoiceDisc += float64(in.PointsRedeemed) * num(pointsSet["redeem_point_value"])
@@ -374,7 +374,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 		if in.TaxID != nil {
 			var name string
 			if err := tx.QueryRow(ctx, `SELECT name, rate, is_inclusive FROM taxes WHERE id=$1 AND branch_id=$2`, *in.TaxID, p.BranchID).Scan(&name, &taxRate, &inclusive); err != nil {
-				return httpx.Invalid("tax_id", "Tax not found.")
+				return helper.Invalid("tax_id", "Tax not found.")
 			}
 			taxID, taxName = in.TaxID, &name
 		} else if dt, _ := a.setting(ctx, tx, p.BranchID, "default-tax"); dt["is_enabled"] == true {
@@ -399,7 +399,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 			var name, typ string
 			var amt float64
 			if err := tx.QueryRow(ctx, `SELECT name, amount_type, amount FROM fees WHERE id=$1 AND branch_id=$2 AND applies_to IN ('sale','both')`, fid, p.BranchID).Scan(&name, &typ, &amt); err != nil {
-				return httpx.Invalid("fee_ids", "Fee not found.")
+				return helper.Invalid("fee_ids", "Fee not found.")
 			}
 			if typ == "percent" {
 				amt = round2(net * amt / 100)
@@ -435,7 +435,7 @@ func (a *API) createSale(c fiber.Ctx) error {
 			paid = *in.PaidAmount
 		}
 		if in.PaymentType == "cash" && paid < total {
-			return httpx.Invalid("paid_amount", "The amount paid is less than the total.")
+			return helper.Invalid("paid_amount", "The amount paid is less than the total.")
 		}
 		change := 0.0
 		if paid > total {
@@ -526,8 +526,8 @@ func (a *API) createSale(c fiber.Ctx) error {
 			p.BranchID, receipt, p.UserID, p.Name, in.CustomerID, in.ShiftID, in.PaymentMethod, in.PaymentType,
 			subtotal, invoiceDisc, taxID, taxName, taxRate, taxTotal, service, feeTotal, rounding, total, math.Min(paid, total)+0, change,
 			round2(costTotal), profit, mdrRate, mdrAmount, round2(commission), earned, redeemed, salePromo, in.Label, custType, in.Note, status, dueDate, createdAt).Scan(&saleID)
-		if db.IsUniqueViolation(err) {
-			return httpx.Conflict("A sale with this receipt number already exists.")
+		if repositories.IsUniqueViolation(err) {
+			return helper.Conflict("A sale with this receipt number already exists.")
 		}
 		if err != nil {
 			return err
@@ -577,15 +577,15 @@ func (a *API) createSale(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Created(c, row)
+	return helper.Created(c, row)
 }
 
 // consumeStock moves stock for a product (and its recipe ingredients). dir is -1 to remove, +1 to restore.
-func (a *API) consumeStock(ctx context.Context, tx pgx.Tx, p *httpx.Principal, prod *productRow, qty, dir float64, typ, ref string) error {
+func (a *API) consumeStock(ctx context.Context, tx pgx.Tx, p *helper.Principal, prod *productRow, qty, dir float64, typ, ref string) error {
 	if len(prod.Ingredients) > 0 {
 		for _, ing := range prod.Ingredients {
-			iid, ok := httpx.UUID(ing, "product_id")
-			iq, _ := httpx.Num(ing, "quantity")
+			iid, ok := helper.UUID(ing, "product_id")
+			iq, _ := helper.Num(ing, "quantity")
 			if !ok || iq == 0 {
 				continue
 			}
@@ -663,7 +663,7 @@ func (a *API) activePromotions(ctx context.Context, tx pgx.Tx, branchID string, 
 		_ = json.Unmarshal(prods, &list)
 		pr.Products = map[string]bool{}
 		for _, it := range list {
-			if id, ok := httpx.UUID(it, "product_id"); ok {
+			if id, ok := helper.UUID(it, "product_id"); ok {
 				pr.Products[id] = true
 			}
 		}
@@ -675,13 +675,13 @@ func (a *API) activePromotions(ctx context.Context, tx pgx.Tx, branchID string, 
 // ---------- void ----------
 
 func (a *API) voidSale(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	if p.Role == "cashier" {
-		return httpx.Forbidden("Cashiers cannot delete sales.")
+		return helper.Forbidden("Cashiers cannot delete sales.")
 	}
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
@@ -690,7 +690,7 @@ func (a *API) voidSale(c fiber.Ctx) error {
 		var earned, redeemed int
 		if err := tx.QueryRow(ctx, `SELECT receipt_number, customer_id, points_earned, points_redeemed FROM sales WHERE id=$1 AND branch_id=$2 FOR UPDATE`, id, p.BranchID).
 			Scan(&receipt, &customerID, &earned, &redeemed); err != nil {
-			return httpx.NotFound("Sale")
+			return helper.NotFound("Sale")
 		}
 		rows, err := tx.Query(ctx, `SELECT product_id, quantity FROM sale_items WHERE sale_id=$1 AND product_id IS NOT NULL`, id)
 		if err != nil {
@@ -731,7 +731,7 @@ func (a *API) voidSale(c fiber.Ctx) error {
 		return err
 	}
 	a.activity(c, "sale_deleted", "Deleted sale")
-	return httpx.NoContent(c)
+	return helper.NoContent(c)
 }
 
 // ---------- shifts (cashier app) ----------
@@ -741,28 +741,28 @@ func (a *API) openShift(c fiber.Ctx) error {
 		CashDrawerID string  `json:"cash_drawer_id"`
 		OpeningCash  float64 `json:"opening_cash"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	var open bool
 	if err := a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM cash_drawers WHERE id=$1 AND branch_id=$2)`, in.CashDrawerID, p.BranchID).Scan(&open); err != nil || !open {
-		return httpx.Invalid("cash_drawer_id", "Cash drawer not found.")
+		return helper.Invalid("cash_drawer_id", "Cash drawer not found.")
 	}
 	_ = a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM shifts WHERE cash_drawer_id=$1 AND closed_at IS NULL)`, in.CashDrawerID).Scan(&open)
 	if open {
-		return httpx.Conflict("This cash drawer already has an open shift.")
+		return helper.Conflict("This cash drawer already has an open shift.")
 	}
-	row, err := db.JSONRow(c.Context(), a.DB, `INSERT INTO shifts (branch_id, cash_drawer_id, cashier_id, opening_cash) VALUES ($1,$2,$3,$4) RETURNING id, cash_drawer_id, cashier_id, opened_at, opening_cash`,
+	row, err := repositories.JSONRow(c.Context(), a.DB, `INSERT INTO shifts (branch_id, cash_drawer_id, cashier_id, opening_cash) VALUES ($1,$2,$3,$4) RETURNING id, cash_drawer_id, cashier_id, opened_at, opening_cash`,
 		p.BranchID, in.CashDrawerID, p.UserID, in.OpeningCash)
 	if err != nil {
 		return err
 	}
-	return httpx.Created(c, row)
+	return helper.Created(c, row)
 }
 
 func (a *API) closeShift(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
@@ -771,16 +771,16 @@ func (a *API) closeShift(c fiber.Ctx) error {
 		CashIn     float64 `json:"cash_in"`
 		CashOut    float64 `json:"cash_out"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
 	tag, err := a.DB.Exec(c.Context(), `UPDATE shifts SET closed_at=now(), actual_cash=$3, cash_in=$4, cash_out=$5 WHERE id=$1 AND branch_id=$2 AND closed_at IS NULL`,
-		id, httpx.P(c).BranchID, in.ActualCash, in.CashIn, in.CashOut)
+		id, helper.P(c).BranchID, in.ActualCash, in.CashIn, in.CashOut)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return httpx.Conflict("The shift is already closed or does not exist.")
+		return helper.Conflict("The shift is already closed or does not exist.")
 	}
 	return a.shiftDetail(c)
 }
@@ -800,11 +800,11 @@ func strOr(v any, def string) string {
 }
 
 func (a *API) saleReceipt(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	s, err := a.CRUD.Fetch(c.Context(), a.DB, a.saleResource(), p, id)
 	if err != nil {
 		return err
@@ -814,7 +814,7 @@ func (a *API) saleReceipt(c fiber.Ctx) error {
 	items, _ := s["items"].([]map[string]any)
 	h := 260.0 + float64(len(items))*24
 	d := export.NewPDF(226, h)
-	tr := httpx.Lang(c).T
+	tr := helper.Lang(c).T
 	d.Page()
 	y := h - 24
 	center := func(size float64, bold bool, t string) {
@@ -902,11 +902,11 @@ func formatTime(v any, loc *time.Location) string {
 }
 
 func (a *API) saleDeliveryNote(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	s, err := a.CRUD.Fetch(c.Context(), a.DB, a.saleResource(), p, id)
 	if err != nil {
 		return err
@@ -914,10 +914,10 @@ func (a *API) saleDeliveryNote(c fiber.Ctx) error {
 	name, addr, phone := a.storeHeader(c.Context(), p.BranchID)
 	cust := map[string]any{}
 	if cu, ok := s["customer"].(map[string]any); ok {
-		cust, _ = db.JSONRow(c.Context(), a.DB, `SELECT name, phone, address FROM customers WHERE id=$1`, cu["id"])
+		cust, _ = repositories.JSONRow(c.Context(), a.DB, `SELECT name, phone, address FROM customers WHERE id=$1`, cu["id"])
 	}
 	d := export.NewPDF(595, 842)
-	tr := httpx.Lang(c).T
+	tr := helper.Lang(c).T
 	d.Page()
 	d.Text(40, 790, 16, true, tr("DELIVERY NOTE"))
 	d.Text(40, 770, 10, true, name)

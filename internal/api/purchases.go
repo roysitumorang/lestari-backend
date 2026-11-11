@@ -9,10 +9,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 func (a *API) purchaseResource() *crud.Resource {
@@ -58,7 +58,7 @@ func (a *API) purchaseResource() *crud.Resource {
 					return err
 				}
 			}
-			if err := a.addPurchaseItems(ctx, h.Tx, h.P, id, httpx.Items(h.Body, "items")); err != nil {
+			if err := a.addPurchaseItems(ctx, h.Tx, h.P, id, helper.Items(h.Body, "items")); err != nil {
 				return err
 			}
 			return a.recalcPurchase(ctx, h.Tx, h.P, id)
@@ -66,29 +66,29 @@ func (a *API) purchaseResource() *crud.Resource {
 		BeforeDelete: func(ctx context.Context, h *crud.Ctx, id string) error {
 			return a.reversePurchaseItems(ctx, h.Tx, h.P, id, "Purchase deleted")
 		},
-		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
-			items, err := db.JSONRows(ctx, q, `SELECT product_id, product_name, quantity, unit, unit_cost, discount_amount, subtotal FROM purchase_items WHERE purchase_id=$1 ORDER BY id`, row["id"])
+		Detail: func(ctx context.Context, q repositories.Querier, p *helper.Principal, row map[string]any) error {
+			items, err := repositories.JSONRows(ctx, q, `SELECT product_id, product_name, quantity, unit, unit_cost, discount_amount, subtotal FROM purchase_items WHERE purchase_id=$1 ORDER BY id`, row["id"])
 			row["items"] = items
 			return err
 		},
 	}
 }
 
-func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principal, purchaseID string, items []map[string]any) error {
+func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *helper.Principal, purchaseID string, items []map[string]any) error {
 	var ref string
 	if err := tx.QueryRow(ctx, `SELECT receipt_number FROM purchases WHERE id=$1`, purchaseID).Scan(&ref); err != nil {
 		return err
 	}
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	n := 0
 	for i, it := range items {
-		pid, ok := httpx.UUID(it, "product_id")
-		qty, qok := httpx.Num(it, "quantity")
+		pid, ok := helper.UUID(it, "product_id")
+		qty, qok := helper.Num(it, "quantity")
 		if !ok && !qok {
 			continue
 		}
-		cost, _ := httpx.Num(it, "unit_cost")
-		disc, _ := httpx.Num(it, "discount_amount")
+		cost, _ := helper.Num(it, "unit_cost")
+		disc, _ := helper.Num(it, "discount_amount")
 		if !ok || !qok || qty <= 0 || cost < 0 {
 			v.Add("items", "Row {row} needs a product, a quantity above 0 and a unit cost.", "row", i+1)
 			continue
@@ -100,7 +100,7 @@ func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principa
 		}
 		sub := round2(qty*cost - disc)
 		if _, err := tx.Exec(ctx, `INSERT INTO purchase_items (purchase_id, product_id, product_name, quantity, unit, unit_cost, discount_amount, subtotal) VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7,$8)`,
-			purchaseID, pid, name, qty, httpx.Str(it, "unit"), cost, disc, sub); err != nil {
+			purchaseID, pid, name, qty, helper.Str(it, "unit"), cost, disc, sub); err != nil {
 			return err
 		}
 		effCost := round2(sub / qty)
@@ -122,7 +122,7 @@ func (a *API) addPurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principa
 	return v.Err()
 }
 
-func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Principal, purchaseID string, note string) error {
+func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *helper.Principal, purchaseID string, note string) error {
 	var ref string
 	if err := tx.QueryRow(ctx, `SELECT receipt_number FROM purchases WHERE id=$1`, purchaseID).Scan(&ref); err != nil {
 		return err
@@ -147,7 +147,7 @@ func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Prin
 	rows.Close()
 	for _, x := range items {
 		if _, err := productStock(ctx, tx, p.BranchID, x.pid, -x.qty, "purchase", ref, nil, p.UserID, p.Name, note); err != nil {
-			he := &httpx.Error{}
+			he := &helper.Error{}
 			if errors.As(err, &he) {
 				continue // product deleted meanwhile
 			}
@@ -159,7 +159,7 @@ func (a *API) reversePurchaseItems(ctx context.Context, tx pgx.Tx, p *httpx.Prin
 }
 
 // recalcPurchase refreshes totals, status and the payable for a purchase.
-func (a *API) recalcPurchase(ctx context.Context, tx pgx.Tx, p *httpx.Principal, id string) error {
+func (a *API) recalcPurchase(ctx context.Context, tx pgx.Tx, p *helper.Principal, id string) error {
 	var payType, ref string
 	var supplier *string
 	var paidIn *float64
@@ -182,7 +182,7 @@ func (a *API) recalcPurchase(ctx context.Context, tx pgx.Tx, p *httpx.Principal,
 			paid = math.Min(*paidIn, total)
 		}
 		if supplier == nil {
-			return httpx.Invalid("supplier_id", "A credit purchase needs a supplier.")
+			return helper.Invalid("supplier_id", "A credit purchase needs a supplier.")
 		}
 	}
 	// payments already recorded against the payable count as paid
@@ -220,42 +220,42 @@ func (a *API) registerPurchases() {
 }
 
 func (a *API) purchaseReturn(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	body, err := httpx.Body(c)
+	body, err := helper.Body(c)
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
-	refund := httpx.Str(body, "refund_method")
+	p := helper.P(c)
+	refund := helper.Str(body, "refund_method")
 	if refund == "" {
 		refund = "cash"
 	}
 	if refund != "cash" && refund != "reduce_payable" {
-		return httpx.Invalid("refund_method", "Must be one of: cash, reduce_payable.")
+		return helper.Invalid("refund_method", "Must be one of: cash, reduce_payable.")
 	}
 	var returnID string
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		var ref string
 		if err := tx.QueryRow(ctx, `SELECT receipt_number FROM purchases WHERE id=$1 AND branch_id=$2`, id, p.BranchID).Scan(&ref); err != nil {
-			return httpx.NotFound("Purchase")
+			return helper.NotFound("Purchase")
 		}
 		num, err := a.nextNumber(ctx, tx, "RB", "returns", "return_number", "branch_id", p.BranchID)
 		if err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO returns (branch_id, kind, return_number, purchase_id, refund_method, reason, cashier_name) VALUES ($1,'purchase',$2,$3,$4,NULLIF($5,''),$6) RETURNING id`,
-			p.BranchID, num, id, refund, httpx.Str(body, "reason"), p.Name).Scan(&returnID); err != nil {
+			p.BranchID, num, id, refund, helper.Str(body, "reason"), p.Name).Scan(&returnID); err != nil {
 			return err
 		}
 		var total float64
 		n := 0
-		for i, it := range httpx.Items(body, "items") {
-			pid, ok := httpx.UUID(it, "product_id")
-			qty, qok := httpx.Num(it, "quantity")
+		for i, it := range helper.Items(body, "items") {
+			pid, ok := helper.UUID(it, "product_id")
+			qty, qok := helper.Num(it, "quantity")
 			if !ok && !qok {
 				continue
 			}
@@ -263,11 +263,11 @@ func (a *API) purchaseReturn(c fiber.Ctx) error {
 			var bought, cost, returned float64
 			err := tx.QueryRow(ctx, `SELECT product_name, sum(quantity), round(sum(subtotal)/NULLIF(sum(quantity),0), 2) FROM purchase_items WHERE purchase_id=$1 AND product_id=$2 GROUP BY product_name`, id, pid).Scan(&name, &bought, &cost)
 			if err != nil || qty <= 0 {
-				return httpx.Invalid("items", "Row {row}: the product is not on this purchase or the quantity is invalid.", "row", i+1)
+				return helper.Invalid("items", "Row {row}: the product is not on this purchase or the quantity is invalid.", "row", i+1)
 			}
 			_ = tx.QueryRow(ctx, `SELECT COALESCE(sum(ri.quantity),0) FROM return_items ri JOIN returns r ON r.id = ri.return_id WHERE r.purchase_id=$1 AND ri.product_id=$2 AND r.id <> $3`, id, pid, returnID).Scan(&returned)
 			if qty > bought-returned {
-				return httpx.Invalid("items", "Row {row}: only {qty} can still be returned.", "row", i+1, "qty", trimNum(bought-returned))
+				return helper.Invalid("items", "Row {row}: only {qty} can still be returned.", "row", i+1, "qty", trimNum(bought-returned))
 			}
 			sub := round2(qty * cost)
 			if _, err := tx.Exec(ctx, `INSERT INTO return_items (return_id, product_id, product_name, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6)`, returnID, pid, name, qty, cost, sub); err != nil {
@@ -280,7 +280,7 @@ func (a *API) purchaseReturn(c fiber.Ctx) error {
 			n++
 		}
 		if n == 0 {
-			return httpx.Invalid("items", "Add at least one item to return.")
+			return helper.Invalid("items", "Add at least one item to return.")
 		}
 		if _, err := tx.Exec(ctx, `UPDATE returns SET refund_amount=$2 WHERE id=$1`, returnID, total); err != nil {
 			return err
@@ -299,7 +299,7 @@ func (a *API) purchaseReturn(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Created(c, row)
+	return helper.Created(c, row)
 }
 
 func trimNum(f float64) string { return fmt.Sprintf("%g", f) }
@@ -345,8 +345,8 @@ func (a *API) debtResource(kind string) *crud.Resource {
 			{Name: "status", ReadOnly: true, Filter: true},
 		},
 		Filters: []crud.Filter{{Param: "overdue", SQL: "(? <> 'true' OR (t.due_date < current_date AND t.status <> 'paid'))"}},
-		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
-			pays, err := db.JSONRows(ctx, q, `SELECT id, payment_date, amount, payment_method, note FROM debt_payments WHERE debt_id=$1 ORDER BY payment_date, id`, row["id"])
+		Detail: func(ctx context.Context, q repositories.Querier, p *helper.Principal, row map[string]any) error {
+			pays, err := repositories.JSONRows(ctx, q, `SELECT id, payment_date, amount, payment_method, note FROM debt_payments WHERE debt_id=$1 ORDER BY payment_date, id`, row["id"])
 			row["payments"] = pays
 			return err
 		},
@@ -364,19 +364,19 @@ func (a *API) registerDebts() {
 
 func (a *API) payDebt(res *crud.Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		body, err := httpx.Body(c)
+		body, err := helper.Body(c)
 		if err != nil {
 			return err
 		}
-		p := httpx.P(c)
-		amount, ok := httpx.Num(body, "amount")
-		date := httpx.Str(body, "payment_date")
-		method := httpx.Str(body, "payment_method")
-		v := &httpx.Validation{}
+		p := helper.P(c)
+		amount, ok := helper.Num(body, "amount")
+		date := helper.Str(body, "payment_date")
+		method := helper.Str(body, "payment_method")
+		v := &helper.Validation{}
 		if !ok || amount <= 0 {
 			v.Add("amount", "Enter an amount above 0.")
 		}
@@ -397,17 +397,17 @@ func (a *API) payDebt(res *crud.Resource) fiber.Handler {
 			kind := map[string]string{"Payables": "payable", "Receivables": "receivable"}[res.Name]
 			if err := tx.QueryRow(ctx, `SELECT total_amount, paid_amount, sale_id, purchase_id FROM debts WHERE id=$1 AND branch_id=$2 AND kind=$3 FOR UPDATE`, id, p.BranchID, kind).
 				Scan(&total, &paid, &saleID, &purchaseID); err != nil {
-				return httpx.NotFound(res.Singular)
+				return helper.NotFound(res.Singular)
 			}
 			remaining := round2(total - paid)
 			if remaining <= 0 {
-				return httpx.Conflict("This {kind} is already paid.", "kind", i18n.Tr(res.Singular))
+				return helper.Conflict("This {kind} is already paid.", "kind", i18n.Tr(res.Singular))
 			}
 			if amount > remaining+0.004 {
-				return httpx.Invalid("amount", "The amount is more than the remaining {amount}.", "amount", trimNum(remaining))
+				return helper.Invalid("amount", "The amount is more than the remaining {amount}.", "amount", trimNum(remaining))
 			}
-			pay, err := db.JSONRow(ctx, tx, `INSERT INTO debt_payments (debt_id, payment_date, amount, payment_method, note) VALUES ($1,$2::date,$3,$4,NULLIF($5,'')) RETURNING id, payment_date, amount, payment_method, note`,
-				id, date, amount, method, httpx.Str(body, "note"))
+			pay, err := repositories.JSONRow(ctx, tx, `INSERT INTO debt_payments (debt_id, payment_date, amount, payment_method, note) VALUES ($1,$2::date,$3,$4,NULLIF($5,'')) RETURNING id, payment_date, amount, payment_method, note`,
+				id, date, amount, method, helper.Str(body, "note"))
 			if err != nil {
 				return err
 			}
@@ -431,7 +431,7 @@ func (a *API) payDebt(res *crud.Resource) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, out)
+		return helper.OK(c, out)
 	}
 }
 
@@ -450,8 +450,8 @@ func (a *API) returnResource(kind string) *crud.Resource {
 			{Name: "item_count", Kind: crud.Int, Expr: "(SELECT count(*) FROM return_items ri WHERE ri.return_id = t.id)"},
 		},
 		Filters: []crud.Filter{dateFrom("t.created_at::date"), dateTo("t.created_at::date")},
-		Detail: func(ctx context.Context, q db.Querier, p *httpx.Principal, row map[string]any) error {
-			items, err := db.JSONRows(ctx, q, `SELECT product_id, product_name, quantity, unit_price, unit_price AS unit_cost, subtotal FROM return_items WHERE return_id=$1 ORDER BY id`, row["id"])
+		Detail: func(ctx context.Context, q repositories.Querier, p *helper.Principal, row map[string]any) error {
+			items, err := repositories.JSONRows(ctx, q, `SELECT product_id, product_name, quantity, unit_price, unit_price AS unit_cost, subtotal FROM return_items WHERE return_id=$1 ORDER BY id`, row["id"])
 			row["items"] = items
 			return err
 		},
@@ -481,44 +481,44 @@ func (a *API) registerReturns() {
 }
 
 func (a *API) saleReturn(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	body, err := httpx.Body(c)
+	body, err := helper.Body(c)
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	var returnID string
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
 		var receipt string
 		if err := tx.QueryRow(ctx, `SELECT receipt_number FROM sales WHERE id=$1 AND branch_id=$2`, id, p.BranchID).Scan(&receipt); err != nil {
-			return httpx.NotFound("Sale")
+			return helper.NotFound("Sale")
 		}
 		num, err := a.nextNumber(ctx, tx, "RJ", "returns", "return_number", "branch_id", p.BranchID)
 		if err != nil {
 			return err
 		}
-		refund := httpx.Str(body, "refund_method")
+		refund := helper.Str(body, "refund_method")
 		if refund == "" {
 			refund = "cash"
 		}
 		if err := tx.QueryRow(ctx, `INSERT INTO returns (branch_id, kind, return_number, sale_id, refund_method, reason, cashier_name) VALUES ($1,'sale',$2,$3,$4,NULLIF($5,''),$6) RETURNING id`,
-			p.BranchID, num, id, refund, httpx.Str(body, "reason"), p.Name).Scan(&returnID); err != nil {
+			p.BranchID, num, id, refund, helper.Str(body, "reason"), p.Name).Scan(&returnID); err != nil {
 			return err
 		}
 		var total float64
 		n := 0
-		for i, it := range httpx.Items(body, "items") {
-			pid, _ := httpx.UUID(it, "product_id")
-			qty, _ := httpx.Num(it, "quantity")
+		for i, it := range helper.Items(body, "items") {
+			pid, _ := helper.UUID(it, "product_id")
+			qty, _ := helper.Num(it, "quantity")
 			var name string
 			var sold, price float64
 			if err := tx.QueryRow(ctx, `SELECT product_name, sum(quantity), round(sum(subtotal)/NULLIF(sum(quantity),0),2) FROM sale_items WHERE sale_id=$1 AND product_id=$2 GROUP BY product_name`, id, pid).
 				Scan(&name, &sold, &price); err != nil || qty <= 0 || qty > sold {
-				return httpx.Invalid("items", "Row {row}: the product is not on this sale or the quantity is invalid.", "row", i+1)
+				return helper.Invalid("items", "Row {row}: the product is not on this sale or the quantity is invalid.", "row", i+1)
 			}
 			sub := round2(qty * price)
 			if _, err := tx.Exec(ctx, `INSERT INTO return_items (return_id, product_id, product_name, quantity, unit_price, subtotal) VALUES ($1,$2,$3,$4,$5,$6)`, returnID, pid, name, qty, price, sub); err != nil {
@@ -534,7 +534,7 @@ func (a *API) saleReturn(c fiber.Ctx) error {
 			n++
 		}
 		if n == 0 {
-			return httpx.Invalid("items", "Add at least one item to return.")
+			return helper.Invalid("items", "Add at least one item to return.")
 		}
 		_, err = tx.Exec(ctx, `UPDATE returns SET refund_amount=$2 WHERE id=$1`, returnID, total)
 		return err
@@ -546,5 +546,5 @@ func (a *API) saleReturn(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.Created(c, row)
+	return helper.Created(c, row)
 }

@@ -9,16 +9,18 @@ import (
 	"github.com/jackc/pgx/v5"
 	qrcode "github.com/skip2/go-qrcode"
 
-	"github.com/roysitumorang/lestari-backend/internal/auth"
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/middlewares"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 // businessOnly returns an add function whose routes require the business plugin.
 func (a *API) businessOnly() func(method, path string, h fiber.Handler) {
-	return func(method, path string, h fiber.Handler) { a.add(method, path, auth.RequirePlugin("business"), h) }
+	return func(method, path string, h fiber.Handler) {
+		a.add(method, path, middlewares.RequirePlugin("business"), h)
+	}
 }
 
 func (a *API) registerContacts() {
@@ -78,8 +80,8 @@ func changePoints(ctx context.Context, tx pgx.Tx, branchID, customerID string, d
 	var after int
 	err := tx.QueryRow(ctx, `UPDATE customers SET points = GREATEST(points + $3, 0), updated_at = now() WHERE id = $1 AND branch_id = $2 RETURNING points`,
 		customerID, branchID, delta).Scan(&after)
-	if db.IsNoRows(err) {
-		return 0, httpx.NotFound("Customer")
+	if repositories.IsNoRows(err) {
+		return 0, helper.NotFound("Customer")
 	}
 	if err != nil {
 		return 0, err
@@ -90,7 +92,7 @@ func changePoints(ctx context.Context, tx pgx.Tx, branchID, customerID string, d
 }
 
 func (a *API) adjustPoints(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
@@ -99,63 +101,63 @@ func (a *API) adjustPoints(c fiber.Ctx) error {
 		Points float64 `json:"points"`
 		Note   string  `json:"note"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
 	if in.Points < 1 {
-		return httpx.Invalid("points", "Must be at least 1.")
+		return helper.Invalid("points", "Must be at least 1.")
 	}
 	delta := int(in.Points)
 	if in.Mode == "subtract" {
 		delta = -delta
 	} else if in.Mode != "add" {
-		return httpx.Invalid("mode", "Must be one of: add, subtract.")
+		return helper.Invalid("mode", "Must be one of: add, subtract.")
 	}
 	var after int
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
-		after, err = changePoints(c.Context(), tx, httpx.P(c).BranchID, id, delta, "adjusted", "", in.Note)
+		after, err = changePoints(c.Context(), tx, helper.P(c).BranchID, id, delta, "adjusted", "", in.Note)
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"points": after})
+	return helper.OK(c, fiber.Map{"points": after})
 }
 
 func (a *API) pointHistory(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	p := httpx.P(c)
-	pg := httpx.Paging(c, 50)
+	p := helper.P(c)
+	pg := helper.Paging(c, 50)
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM point_ledger l JOIN customers cu ON cu.id = l.customer_id WHERE l.customer_id=$1 AND cu.branch_id=$2`, id, p.BranchID).Scan(&total); err != nil {
 		return err
 	}
-	raw, err := db.JSONRaw(c.Context(), a.DB, `SELECT l.id, l.created_at, l.type, l.points, l.balance_after, l.reference, l.note
+	raw, err := repositories.JSONRaw(c.Context(), a.DB, `SELECT l.id, l.created_at, l.type, l.points, l.balance_after, l.reference, l.note
 		FROM point_ledger l JOIN customers cu ON cu.id = l.customer_id WHERE l.customer_id=$1 AND cu.branch_id=$2
 		ORDER BY l.id DESC LIMIT $3 OFFSET $4`, id, p.BranchID, pg.PerPage, pg.Offset)
 	if err != nil {
 		return err
 	}
-	return httpx.List(c, raw, httpx.NewMeta(pg, total))
+	return helper.List(c, raw, helper.NewMeta(pg, total))
 }
 
 func (a *API) customerQRCodes(c fiber.Ctx) error {
 	ids := []string{}
-	for _, s := range httpx.QueryArray(c, "customer_ids") {
-		if s = strings.ToLower(strings.TrimSpace(s)); httpx.IsUUID(s) {
+	for _, s := range helper.QueryArray(c, "customer_ids") {
+		if s = strings.ToLower(strings.TrimSpace(s)); helper.IsUUID(s) {
 			ids = append(ids, s)
 		}
 	}
-	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT id, name, COALESCE(NULLIF(code,''), 'C'||upper(right(replace(id::text,'-',''),8))) AS code, phone FROM customers
-		WHERE branch_id=$1 AND (cardinality($2::uuid[]) = 0 OR id = ANY($2)) ORDER BY name LIMIT 2000`, httpx.P(c).BranchID, ids)
+	rows, err := repositories.JSONRows(c.Context(), a.DB, `SELECT id, name, COALESCE(NULLIF(code,''), 'C'||upper(right(replace(id::text,'-',''),8))) AS code, phone FROM customers
+		WHERE branch_id=$1 AND (cardinality($2::uuid[]) = 0 OR id = ANY($2)) ORDER BY name LIMIT 2000`, helper.P(c).BranchID, ids)
 	if err != nil {
 		return err
 	}
 	d := export.NewPDF(595, 842)
-	tr := httpx.Lang(c).T
+	tr := helper.Lang(c).T
 	card := c.Query("layout") == "card"
 	cellW, cellH := 180.0, 200.0
 	if card {
@@ -198,14 +200,14 @@ func (a *API) importPoints(c fiber.Ctx) error {
 		return err
 	}
 	mode := c.FormValue("mode", "add")
-	p := httpx.P(c)
+	p := helper.P(c)
 	res := fiber.Map{}
 	updated, failed := 0, 0
 	errs := []crud.ImportError{}
 	err = a.tx(c.Context(), func(tx pgx.Tx) error {
 		for i, r := range rows {
-			code := httpx.Str(r, "code")
-			pts, ok := httpx.Num(r, "points")
+			code := helper.Str(r, "code")
+			pts, ok := helper.Num(r, "points")
 			if code == "" || !ok {
 				failed++
 				errs = append(errs, crud.ImportError{Row: i + 2, Message: "code and points are required"})
@@ -233,5 +235,5 @@ func (a *API) importPoints(c fiber.Ctx) error {
 		return err
 	}
 	res["updated"], res["failed"], res["errors"] = updated, failed, errs
-	return httpx.OK(c, res)
+	return helper.OK(c, res)
 }

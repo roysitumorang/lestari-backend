@@ -14,12 +14,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/roysitumorang/lestari-backend/internal/auth"
-	"github.com/roysitumorang/lestari-backend/internal/config"
+	"github.com/roysitumorang/lestari-backend/config"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/middlewares"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 // Sender delivers OTPs and messages. The default implementation only logs them;
@@ -52,7 +52,7 @@ func (ManualPayments) Create(_ context.Context, ref string, amount float64, meth
 type API struct {
 	DB       *pgxpool.Pool
 	Cfg      config.Config
-	Auth     *auth.Service
+	Auth     *middlewares.Service
 	CRUD     *crud.Engine
 	Log      *slog.Logger
 	Loc      *time.Location
@@ -79,7 +79,7 @@ func New(pool *pgxpool.Pool, cfg config.Config, log *slog.Logger) *API {
 		Log:      log,
 		Loc:      loc,
 		CRUD:     &crud.Engine{DB: pool},
-		Auth:     &auth.Service{DB: pool, Secret: []byte(cfg.JWTSecret), AccessTTL: cfg.AccessTokenTTL, RefreshTTL: cfg.RefreshTokenTTL},
+		Auth:     &middlewares.Service{DB: pool, Secret: []byte(cfg.JWTSecret), AccessTTL: cfg.AccessTokenTTL, RefreshTTL: cfg.RefreshTokenTTL},
 		Sender:   LogSender{Log: log},
 		Payments: ManualPayments{},
 	}
@@ -173,7 +173,7 @@ func (a *API) now() time.Time { return time.Now().In(a.Loc) }
 func (a *API) today() string { return a.now().Format("2006-01-02") }
 
 // nextNumber builds human-friendly document numbers such as INV/20261108/0007.
-func (a *API) nextNumber(ctx context.Context, q db.Querier, prefix, table, col, scopeCol, scope string) (string, error) {
+func (a *API) nextNumber(ctx context.Context, q repositories.Querier, prefix, table, col, scopeCol, scope string) (string, error) {
 	day := a.now().Format("20060102")
 	base := prefix + "/" + day + "/"
 	var n int
@@ -188,7 +188,7 @@ func (a *API) nextNumber(ctx context.Context, q db.Querier, prefix, table, col, 
 // The description is English text with optional {placeholder} name/value pairs; it is stored untranslated
 // with its params and shown in the reader's language (see localizeRows).
 func (a *API) activity(c fiber.Ctx, action, description string, args ...any) {
-	p := httpx.P(c)
+	p := helper.P(c)
 	if _, err := a.DB.Exec(context.Background(), `INSERT INTO activity_logs (store_id, user_id, action, description, params, ip_address, user_agent) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		p.StoreID, p.UserID, action, description, i18n.Params(args...), c.IP(), c.Get("User-Agent")); err != nil {
 		a.Log.Warn("activity log", "err", err)
@@ -197,7 +197,7 @@ func (a *API) activity(c fiber.Ctx, action, description string, args ...any) {
 
 // notify stores an in-app notification for the store. Title and message are English text with optional
 // {placeholder} name/value pairs (args); they are translated when the notification is read.
-func (a *API) notify(ctx context.Context, q db.Querier, storeID string, branchID *string, source, title, message, route string, args ...any) {
+func (a *API) notify(ctx context.Context, q repositories.Querier, storeID string, branchID *string, source, title, message, route string, args ...any) {
 	if _, err := q.Exec(ctx, `INSERT INTO notifications (store_id, branch_id, source, title, message, params, link_route) VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''))`,
 		storeID, branchID, source, title, message, i18n.Params(args...), route); err != nil {
 		a.Log.Warn("notification", "err", err)
@@ -226,15 +226,15 @@ func nullID(id string) any {
 }
 
 // branchScope / storeScope are crud scopes.
-func storeScope(b *crud.Builder, p *httpx.Principal) string {
+func storeScope(b *crud.Builder, p *helper.Principal) string {
 	return "t.store_id = " + b.Add(p.StoreID)
 }
-func storeInsert(p *httpx.Principal) map[string]any { return map[string]any{"store_id": p.StoreID} }
+func storeInsert(p *helper.Principal) map[string]any { return map[string]any{"store_id": p.StoreID} }
 
 // requirePlugin is used inside handlers that serve both plugin and non-plugin paths.
 func requirePlugin(c fiber.Ctx, code string) error {
-	if !httpx.P(c).HasPlugin(code) {
-		return httpx.PaymentRequired("plugin_required", "This feature needs the {plugin} plugin.", "plugin", code)
+	if !helper.P(c).HasPlugin(code) {
+		return helper.PaymentRequired("plugin_required", "This feature needs the {plugin} plugin.", "plugin", code)
 	}
 	return nil
 }

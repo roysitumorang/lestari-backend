@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	qrcode "github.com/skip2/go-qrcode"
 
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/internal/crud"
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 var stockStatusFilter = crud.Filter{Param: "stock_status", SQL: `(CASE ? WHEN 'in_stock' THEN t.stock > 0 WHEN 'low' THEN t.minimum_stock IS NOT NULL AND t.stock <= t.minimum_stock AND t.stock > 0 WHEN 'out' THEN t.stock <= 0 ELSE true END)`}
@@ -87,7 +87,7 @@ func (a *API) productResource() *crud.Resource {
 	}
 }
 
-func nextSKU(ctx context.Context, q db.Querier, branchID string) (string, error) {
+func nextSKU(ctx context.Context, q repositories.Querier, branchID string) (string, error) {
 	var n int64
 	err := q.QueryRow(ctx, `SELECT COALESCE(MAX(NULLIF(regexp_replace(sku, '^P', ''), '')::bigint), 0) + 1 FROM products WHERE branch_id = $1 AND sku ~ '^P[0-9]{1,15}$'`, branchID).Scan(&n)
 	return fmt.Sprintf("P%06d", n), err
@@ -98,36 +98,36 @@ func (a *API) registerCatalog() {
 	a.CRUD.Register(a.addH, "/products", products, "list", "create", "read", "update", "delete", "bulk_delete", "import", "export")
 
 	a.addH("GET", "/products/generate-sku", func(c fiber.Ctx) error {
-		sku, err := nextSKU(c.Context(), a.DB, httpx.P(c).BranchID)
+		sku, err := nextSKU(c.Context(), a.DB, helper.P(c).BranchID)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"sku": sku})
+		return helper.OK(c, fiber.Map{"sku": sku})
 	})
 	a.addH("GET", "/products/check-sku", func(c fiber.Ctx) error {
 		sku := strings.TrimSpace(c.Query("sku"))
 		if sku == "" {
-			return httpx.Invalid("sku", "Required")
+			return helper.Invalid("sku", "Required")
 		}
-		exclude := httpx.QueryUUID(c, "exclude_id")
+		exclude := helper.QueryUUID(c, "exclude_id")
 		var taken bool
 		err := a.DB.QueryRow(c.Context(), `SELECT EXISTS(SELECT 1 FROM products WHERE branch_id=$1 AND lower(sku)=lower($2) AND ($3::uuid IS NULL OR id <> $3::uuid) AND deleted_at IS NULL)`,
-			httpx.P(c).BranchID, sku, exclude).Scan(&taken)
+			helper.P(c).BranchID, sku, exclude).Scan(&taken)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"available": !taken})
+		return helper.OK(c, fiber.Map{"available": !taken})
 	})
 	a.addH("POST", "/products/:id/duplicate", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		row, err := a.CRUD.Fetch(c.Context(), a.DB, products, httpx.P(c), id)
+		row, err := a.CRUD.Fetch(c.Context(), a.DB, products, helper.P(c), id)
 		if err != nil {
 			return err
 		}
-		row["name"] = httpx.T(c, "{name} (copy)", "name", fmt.Sprint(row["name"]))
+		row["name"] = helper.T(c, "{name} (copy)", "name", fmt.Sprint(row["name"]))
 		row["sku"] = nil
 		row["barcode"] = nil
 		row["stock"] = 0.0
@@ -135,7 +135,7 @@ func (a *API) registerCatalog() {
 		if err != nil {
 			return err
 		}
-		return httpx.Created(c, out)
+		return helper.Created(c, out)
 	})
 	a.addH("GET", "/products/barcodes", a.productBarcodes)
 	a.addH("GET", "/products/labels", func(c fiber.Ctx) error {
@@ -144,7 +144,7 @@ func (a *API) registerCatalog() {
 			return err
 		}
 		cols := []export.Column{{Key: "name", Label: "Name"}, {Key: "sku", Label: "SKU"}, {Key: "barcode", Label: "Barcode"}, {Key: "selling_price", Label: "Price", Format: "money"}, {Key: "unit", Label: "Unit"}, {Key: "category_name", Label: "Category"}}
-		b, err := export.XLSX(httpx.Lang(c), "Labels", cols, rows)
+		b, err := export.XLSX(helper.Lang(c), "Labels", cols, rows)
 		if err != nil {
 			return err
 		}
@@ -167,15 +167,15 @@ func (a *API) registerCatalog() {
 // selectedProducts returns products filtered by ?product_ids[]= (all when empty).
 func (a *API) selectedProducts(c fiber.Ctx) ([]map[string]any, error) {
 	ids := []string{}
-	for _, s := range httpx.QueryArray(c, "product_ids") {
-		if s = strings.ToLower(strings.TrimSpace(s)); httpx.IsUUID(s) {
+	for _, s := range helper.QueryArray(c, "product_ids") {
+		if s = strings.ToLower(strings.TrimSpace(s)); helper.IsUUID(s) {
 			ids = append(ids, s)
 		}
 	}
-	return db.JSONRows(c.Context(), a.DB, `SELECT p.id, p.name, p.sku, COALESCE(p.barcode, p.sku) AS barcode, p.selling_price, p.unit,
+	return repositories.JSONRows(c.Context(), a.DB, `SELECT p.id, p.name, p.sku, COALESCE(p.barcode, p.sku) AS barcode, p.selling_price, p.unit,
 		(SELECT name FROM categories WHERE id = p.category_id) AS category_name
 		FROM products p WHERE p.branch_id = $1 AND p.deleted_at IS NULL AND (cardinality($2::uuid[]) = 0 OR p.id = ANY($2)) ORDER BY p.name LIMIT 5000`,
-		httpx.P(c).BranchID, ids)
+		helper.P(c).BranchID, ids)
 }
 
 // productBarcodes renders a printable PDF sheet of barcodes or QR codes.
@@ -198,7 +198,7 @@ func (a *API) productBarcodes(c fiber.Ctx) error {
 		w, h, cellW, cellH = 141.7, 70.9, 141.7, 70.9
 	}
 	d := export.NewPDF(w, h)
-	tr := httpx.Lang(c).T
+	tr := helper.Lang(c).T
 	margin := 18.0
 	if w < 200 {
 		margin = 0
@@ -245,8 +245,8 @@ func productStock(ctx context.Context, tx pgx.Tx, branchID, productID string, ch
 	err := tx.QueryRow(ctx, `UPDATE products SET stock = stock + $3, updated_at = now() WHERE id = $1 AND branch_id = $2 RETURNING stock, track_stock`,
 		productID, branchID, change).Scan(&after, &track)
 	if err != nil {
-		if db.IsNoRows(err) {
-			return 0, httpx.Invalid("product_id", "Product {id} not found.", "id", productID)
+		if repositories.IsNoRows(err) {
+			return 0, helper.Invalid("product_id", "Product {id} not found.", "id", productID)
 		}
 		return 0, err
 	}

@@ -31,15 +31,18 @@ linters:
     - wastedassign
   settings:
     staticcheck:
-      checks: ["all"]
+      # ST1003 (initialisms) is off: names follow the house style of the other services (DbWrite, UrlValues, …).
+      checks: ["all", "-ST1003"]
     revive:
       rules:
-        # Everything under internal/ is private to this module; doc comments are written where they help,
+        # Doc comments are written where they help,
         # not on every exported identifier.
         - name: exported
           disabled: true
         # Handlers and crud hooks have fixed signatures; unused parameters there are expected.
         - name: unused-parameter
+          disabled: true
+        - name: var-naming
           disabled: true
     gosec:
       excludes:

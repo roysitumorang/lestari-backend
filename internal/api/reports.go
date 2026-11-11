@@ -9,26 +9,26 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 // rq carries the common report parameters.
 type rq struct {
 	a          *API
 	c          fiber.Ctx
-	p          *httpx.Principal
+	p          *helper.Principal
 	start, end string
 	q          string
-	page       httpx.Page
+	page       helper.Page
 	all        bool // export: no pagination
 }
 
 func (r *rq) str(k string) string { return strings.TrimSpace(r.c.Query(k)) }
 
 // id returns a UUID query parameter, or nil (SQL NULL) when it is absent or malformed.
-func (r *rq) id(k string) any { return httpx.QueryUUID(r.c, k) }
+func (r *rq) id(k string) any { return helper.QueryUUID(r.c, k) }
 
 func (r *rq) int(k string) int64 {
 	n, _ := strconv.ParseInt(r.c.Query(k), 10, 64)
@@ -55,23 +55,23 @@ type report struct {
 func (r *rq) paged(base, order string, args ...any) (*rres, error) {
 	ctx := r.c.Context()
 	if r.all {
-		rows, err := db.JSONRows(ctx, r.a.DB, base+" ORDER BY "+order+" LIMIT 100000", args...)
+		rows, err := repositories.JSONRows(ctx, r.a.DB, base+" ORDER BY "+order+" LIMIT 100000", args...)
 		return &rres{rows: rows, total: len(rows)}, err
 	}
 	var total int
 	if err := r.a.DB.QueryRow(ctx, `SELECT count(*) FROM (`+base+`) _c`, args...).Scan(&total); err != nil {
 		return nil, err
 	}
-	rows, err := db.JSONRows(ctx, r.a.DB, base+" ORDER BY "+order+fmt.Sprintf(" LIMIT %d OFFSET %d", r.page.PerPage, r.page.Offset), args...)
+	rows, err := repositories.JSONRows(ctx, r.a.DB, base+" ORDER BY "+order+fmt.Sprintf(" LIMIT %d OFFSET %d", r.page.PerPage, r.page.Offset), args...)
 	return &rres{rows: rows, total: total, paged: true}, err
 }
 
 func (r *rq) rows(sql string, args ...any) ([]map[string]any, error) {
-	return db.JSONRows(r.c.Context(), r.a.DB, sql, args...)
+	return repositories.JSONRows(r.c.Context(), r.a.DB, sql, args...)
 }
 
 func (r *rq) row(sql string, args ...any) (map[string]any, error) {
-	m, err := db.JSONRow(r.c.Context(), r.a.DB, sql, args...)
+	m, err := repositories.JSONRow(r.c.Context(), r.a.DB, sql, args...)
 	if m == nil {
 		m = map[string]any{}
 	}
@@ -79,10 +79,10 @@ func (r *rq) row(sql string, args ...any) (map[string]any, error) {
 }
 
 func (a *API) newRQ(c fiber.Ctx, dated bool) (*rq, error) {
-	r := &rq{a: a, c: c, p: httpx.P(c), q: strings.TrimSpace(c.Query("q")), page: httpx.Paging(c, 50)}
+	r := &rq{a: a, c: c, p: helper.P(c), q: strings.TrimSpace(c.Query("q")), page: helper.Paging(c, 50)}
 	if dated {
 		var err error
-		if r.start, r.end, err = httpx.DateRange(c, a.Loc); err != nil {
+		if r.start, r.end, err = helper.DateRange(c, a.Loc); err != nil {
 			return nil, err
 		}
 	}
@@ -99,11 +99,11 @@ func (a *API) reportHandler(rp report) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		meta := httpx.Unpaged(len(res.rows))
+		meta := helper.Unpaged(len(res.rows))
 		if res.paged {
-			meta = httpx.NewMeta(r.page, res.total)
+			meta = helper.NewMeta(r.page, res.total)
 		}
-		x := httpx.Extras{}
+		x := helper.Extras{}
 		if res.summary != nil {
 			x.Summary = res.summary
 		}
@@ -113,7 +113,7 @@ func (a *API) reportHandler(rp report) fiber.Handler {
 		if res.chart != nil {
 			x.Chart = res.chart
 		}
-		return httpx.ListWith(c, res.rows, meta, x)
+		return helper.ListWith(c, res.rows, meta, x)
 	}
 }
 
@@ -243,18 +243,18 @@ func (a *API) registerReports() {
 	a.addH("GET", "/reports/shifts/:id", a.shiftDetail)
 	a.addH("GET", "/reports/shifts/:id/export", a.shiftPDF)
 	a.addH("GET", "/reports/store-ratings/:id", func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, "id")
+		id, err := helper.ParamID(c, "id")
 		if err != nil {
 			return err
 		}
-		row, err := db.JSONRow(c.Context(), a.DB, `SELECT r.id, r.created_at, r.customer_name, r.rating, r.comment, r.tags, s.receipt_number FROM store_ratings r LEFT JOIN sales s ON s.id = r.sale_id WHERE r.id=$1 AND r.branch_id=$2`, id, httpx.P(c).BranchID)
+		row, err := repositories.JSONRow(c.Context(), a.DB, `SELECT r.id, r.created_at, r.customer_name, r.rating, r.comment, r.tags, s.receipt_number FROM store_ratings r LEFT JOIN sales s ON s.id = r.sale_id WHERE r.id=$1 AND r.branch_id=$2`, id, helper.P(c).BranchID)
 		if err != nil {
 			return err
 		}
 		if row == nil {
-			return httpx.NotFound("Review")
+			return helper.NotFound("Review")
 		}
-		return httpx.OK(c, row)
+		return helper.OK(c, row)
 	})
 }
 
@@ -393,23 +393,23 @@ func (a *API) salesByCategory(r *rq) (*rres, error) {
 func (a *API) salesOfDay(c fiber.Ctx) error {
 	day := c.Params("date")
 	if _, ok := isoDate(day); !ok {
-		return httpx.NotFound("Day")
+		return helper.NotFound("Day")
 	}
-	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT `+saleRowCols+` FROM sales s WHERE s.branch_id=$1 AND s.created_at::date = $2::date ORDER BY s.created_at`, httpx.P(c).BranchID, day)
+	rows, err := repositories.JSONRows(c.Context(), a.DB, `SELECT `+saleRowCols+` FROM sales s WHERE s.branch_id=$1 AND s.created_at::date = $2::date ORDER BY s.created_at`, helper.P(c).BranchID, day)
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"date": day, "sales": rows})
+	return helper.OK(c, fiber.Map{"date": day, "sales": rows})
 }
 
 // salesWhere serves the "which receipts" detail endpoints of several reports.
 func (a *API) salesWhere(cond, param string) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		id, err := httpx.ParamID(c, param)
+		id, err := helper.ParamID(c, param)
 		if err != nil {
 			return err
 		}
-		start, end, err := httpx.DateRange(c, a.Loc)
+		start, end, err := helper.DateRange(c, a.Loc)
 		if err != nil {
 			return err
 		}
@@ -417,17 +417,17 @@ func (a *API) salesWhere(cond, param string) fiber.Handler {
 		if c.Query("start_date") == "" {
 			start = a.now().AddDate(-1, 0, 0).Format("2006-01-02")
 		}
-		rows, err := db.JSONRows(c.Context(), a.DB, `SELECT `+saleRowCols+`, s.points_earned, s.points_redeemed FROM sales s WHERE `+salesBase+` AND `+cond+` ORDER BY s.created_at DESC LIMIT 500`,
-			httpx.P(c).BranchID, start, end, id)
+		rows, err := repositories.JSONRows(c.Context(), a.DB, `SELECT `+saleRowCols+`, s.points_earned, s.points_redeemed FROM sales s WHERE `+salesBase+` AND `+cond+` ORDER BY s.created_at DESC LIMIT 500`,
+			helper.P(c).BranchID, start, end, id)
 		if err != nil {
 			return err
 		}
-		return httpx.OK(c, fiber.Map{"sales": rows})
+		return helper.OK(c, fiber.Map{"sales": rows})
 	}
 }
 
 func (a *API) rebuildDaily(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	// totals are computed live from transactions, so the job only validates the period
 	id, err := a.startJob(p.StoreID, "rebuild_daily_sales", fiber.Map{"start_date": c.Query("start_date"), "branch_id": p.BranchID}, func(context.Context) (any, error) {
 		return map[string]any{"rebuilt": true}, nil
@@ -435,7 +435,7 @@ func (a *API) rebuildDaily(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"job_id": id, "status": "queued"})
+	return helper.OK(c, fiber.Map{"job_id": id, "status": "queued"})
 }
 
 // ---------- purchases ----------
@@ -531,15 +531,15 @@ func (a *API) shifts(r *rq) (*rres, error) {
 }
 
 func (a *API) shiftRow(c fiber.Ctx) (map[string]any, error) {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return nil, err
 	}
-	row, err := db.JSONRow(c.Context(), a.DB, `SELECT `+shiftCols+`,
+	row, err := repositories.JSONRow(c.Context(), a.DB, `SELECT `+shiftCols+`,
 		COALESCE((SELECT json_agg(x) FROM (SELECT payment_method, count(*) AS transaction_count, sum(grand_total) AS amount FROM sales WHERE shift_id = sh.id GROUP BY 1 ORDER BY 1) x), '[]') AS payments`+
-		shiftFrom+` WHERE sh.id=$1 AND sh.branch_id=$2`, id, httpx.P(c).BranchID)
+		shiftFrom+` WHERE sh.id=$1 AND sh.branch_id=$2`, id, helper.P(c).BranchID)
 	if err == nil && row == nil {
-		err = httpx.NotFound("Shift")
+		err = helper.NotFound("Shift")
 	}
 	return row, err
 }
@@ -549,7 +549,7 @@ func (a *API) shiftDetail(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, row)
+	return helper.OK(c, row)
 }
 
 func (a *API) shiftPDF(c fiber.Ctx) error {
@@ -558,7 +558,7 @@ func (a *API) shiftPDF(c fiber.Ctx) error {
 		return err
 	}
 	d := export.NewPDF(226, 420)
-	tr := httpx.Lang(c).T
+	tr := helper.Lang(c).T
 	d.Page()
 	y := 396.0
 	line := func(label string, v any, bold bool) {

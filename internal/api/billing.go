@@ -13,10 +13,10 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/roysitumorang/lestari-backend/internal/db"
-	"github.com/roysitumorang/lestari-backend/internal/export"
-	"github.com/roysitumorang/lestari-backend/internal/httpx"
-	"github.com/roysitumorang/lestari-backend/internal/i18n"
+	"github.com/roysitumorang/lestari-backend/export"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 var payChannels = []string{"virtual_account", "qris", "e_wallet", "credit_card", "convenience_store", "manual_transfer"}
@@ -82,7 +82,7 @@ const invoiceCols = `id, invoice_number, kind, description, payment_method, amou
 
 // createInvoice charges coins immediately (status paid) or asks the payment provider for a link.
 func (a *API) createInvoice(c fiber.Ctx, kind, desc, method string, amount float64, promo string, meta map[string]any) (map[string]any, error) {
-	p := httpx.P(c)
+	p := helper.P(c)
 	var out map[string]any
 	err := a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
@@ -92,7 +92,7 @@ func (a *API) createInvoice(c fiber.Ctx, kind, desc, method string, amount float
 			err := tx.QueryRow(ctx, `UPDATE vouchers SET used_count = used_count + 1 WHERE upper(code)=upper($1) AND reward_type='discount_percent' AND used_count < max_uses AND (expires_at IS NULL OR expires_at > now())
 				RETURNING reward_type, reward_amount`, promo).Scan(&typ, &val)
 			if err != nil {
-				return httpx.Invalid("promo_code", "This promo code is not valid.")
+				return helper.Invalid("promo_code", "This promo code is not valid.")
 			}
 			amount = round2(amount * (100 - val) / 100)
 		}
@@ -104,7 +104,7 @@ func (a *API) createInvoice(c fiber.Ctx, kind, desc, method string, amount float
 		var id string
 		if method == "coin" {
 			if kind == "coin_topup" {
-				return httpx.Invalid("payment_method", "Coins cannot be bought with coins.")
+				return helper.Invalid("payment_method", "Coins cannot be bought with coins.")
 			}
 			if err := spendCoins(ctx, tx, p.StoreID, amount); err != nil {
 				return err
@@ -123,7 +123,7 @@ func (a *API) createInvoice(c fiber.Ctx, kind, desc, method string, amount float
 			} else if method != "manual_transfer" {
 				fee = 4000
 			}
-			url, instructions, err := a.Payments.Create(ctx, number, amount+fee, method, httpx.Lang(c))
+			url, instructions, err := a.Payments.Create(ctx, number, amount+fee, method, helper.Lang(c))
 			if err != nil {
 				return err
 			}
@@ -133,7 +133,7 @@ func (a *API) createInvoice(c fiber.Ctx, kind, desc, method string, amount float
 				return err
 			}
 		}
-		out, err = db.JSONRow(ctx, tx, `SELECT `+invoiceCols+`, id AS invoice_id FROM invoices WHERE id=$1`, id)
+		out, err = repositories.JSONRow(ctx, tx, `SELECT `+invoiceCols+`, id AS invoice_id FROM invoices WHERE id=$1`, id)
 		return err
 	})
 	return out, err
@@ -171,7 +171,7 @@ func (a *API) applyInvoice(ctx context.Context, tx pgx.Tx, id string) error {
 		ids := []string{}
 		if arr, ok := meta["branch_ids"].([]any); ok {
 			for _, x := range arr {
-				if id, ok := x.(string); ok && httpx.IsUUID(id) {
+				if id, ok := x.(string); ok && helper.IsUUID(id) {
 					ids = append(ids, id)
 				}
 			}
@@ -190,7 +190,7 @@ func (a *API) markInvoicePaid(ctx context.Context, number string) (bool, error) 
 		var id, storeID string
 		var desc string
 		err := tx.QueryRow(ctx, `UPDATE invoices SET status='paid', paid_at=now(), updated_at=now() WHERE invoice_number=$1 AND status='pending' RETURNING id, store_id, description`, number).Scan(&id, &storeID, &desc)
-		if db.IsNoRows(err) {
+		if repositories.IsNoRows(err) {
 			return nil
 		}
 		if err != nil {
@@ -212,7 +212,7 @@ func (a *API) markDepositPaid(ctx context.Context, ref string) (bool, error) {
 		var id, branchID string
 		var amount float64
 		err := tx.QueryRow(ctx, `SELECT id, branch_id, amount FROM ppob_deposits WHERE reference_id=$1 AND status='pending' FOR UPDATE`, ref).Scan(&id, &branchID, &amount)
-		if db.IsNoRows(err) {
+		if repositories.IsNoRows(err) {
 			return nil
 		}
 		if err != nil {
@@ -236,17 +236,17 @@ func (a *API) paymentWebhook(c fiber.Ctx) error {
 	m := hmac.New(sha256.New, secret)
 	m.Write(c.Body())
 	if !hmac.Equal([]byte(hex.EncodeToString(m.Sum(nil))), []byte(strings.ToLower(c.Get("X-Signature")))) {
-		return httpx.Unauthorized("invalid_signature", "Invalid signature.")
+		return helper.Unauthorized("invalid_signature", "Invalid signature.")
 	}
 	var in struct {
 		Reference string `json:"reference"`
 		Status    string `json:"status"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
 	if in.Status != "paid" {
-		return httpx.OK(c, fiber.Map{"handled": false})
+		return helper.OK(c, fiber.Map{"handled": false})
 	}
 	ok, err := a.markInvoicePaid(c.Context(), in.Reference)
 	if err == nil && !ok {
@@ -255,12 +255,12 @@ func (a *API) paymentWebhook(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, fiber.Map{"handled": ok})
+	return helper.OK(c, fiber.Map{"handled": ok})
 }
 
 func (a *API) invoiceWhere(c fiber.Ctx) (string, []any, error) {
-	p := httpx.P(c)
-	start, end, err := httpx.DateRange(c, a.Loc)
+	p := helper.P(c)
+	start, end, err := helper.DateRange(c, a.Loc)
 	if err != nil {
 		return "", nil, err
 	}
@@ -269,27 +269,27 @@ func (a *API) invoiceWhere(c fiber.Ctx) (string, []any, error) {
 }
 
 func (a *API) listInvoices(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	// expire stale pending invoices
 	_, _ = a.DB.Exec(c.Context(), `UPDATE invoices SET status='expired' WHERE store_id=$1 AND status='pending' AND expires_at < now()`, p.StoreID)
 	where, args, err := a.invoiceWhere(c)
 	if err != nil {
 		return err
 	}
-	pg := httpx.Paging(c, 50)
+	pg := helper.Paging(c, 50)
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM invoices WHERE `+where, args...).Scan(&total); err != nil {
 		return err
 	}
-	rows, err := db.JSONRaw(c.Context(), a.DB, `SELECT `+invoiceCols+` FROM invoices WHERE `+where+fmt.Sprintf(` ORDER BY created_at DESC LIMIT %d OFFSET %d`, pg.PerPage, pg.Offset), args...)
+	rows, err := repositories.JSONRaw(c.Context(), a.DB, `SELECT `+invoiceCols+` FROM invoices WHERE `+where+fmt.Sprintf(` ORDER BY created_at DESC LIMIT %d OFFSET %d`, pg.PerPage, pg.Offset), args...)
 	if err != nil {
 		return err
 	}
-	summary, err := db.JSONRow(c.Context(), a.DB, `SELECT CASE plan WHEN 'pro' THEN 'Pro' WHEN 'pro_trial' THEN 'Pro (trial)' ELSE 'Free' END AS plan_name, plan_expires_at, coin_balance FROM stores WHERE id=$1`, p.StoreID)
+	summary, err := repositories.JSONRow(c.Context(), a.DB, `SELECT CASE plan WHEN 'pro' THEN 'Pro' WHEN 'pro_trial' THEN 'Pro (trial)' ELSE 'Free' END AS plan_name, plan_expires_at, coin_balance FROM stores WHERE id=$1`, p.StoreID)
 	if err != nil {
 		return err
 	}
-	return httpx.ListWith(c, rows, httpx.NewMeta(pg, total), httpx.Extras{Summary: summary})
+	return helper.ListWith(c, rows, helper.NewMeta(pg, total), helper.Extras{Summary: summary})
 }
 
 func (a *API) exportInvoices(c fiber.Ctx) error {
@@ -297,7 +297,7 @@ func (a *API) exportInvoices(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	rows, err := db.JSONRows(c.Context(), a.DB, `SELECT `+invoiceCols+` FROM invoices WHERE `+where+` ORDER BY created_at DESC`, args...)
+	rows, err := repositories.JSONRows(c.Context(), a.DB, `SELECT `+invoiceCols+` FROM invoices WHERE `+where+` ORDER BY created_at DESC`, args...)
 	if err != nil {
 		return err
 	}
@@ -311,11 +311,11 @@ func (a *API) subscribe(c fiber.Ctx) error {
 		PaymentMethod string `json:"payment_method"`
 		PromoCode     string `json:"promo_code"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
 	pl, ok := plans[in.Plan]
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	if !ok {
 		v.Add("plan", "Choose a plan.")
 	}
@@ -325,11 +325,11 @@ func (a *API) subscribe(c fiber.Ctx) error {
 	if err := v.Err(); err != nil {
 		return err
 	}
-	inv, err := a.createInvoice(c, "subscription", httpx.T(c, "Pro plan, {n} month(s)", "n", pl.Months), in.PaymentMethod, pl.Price, in.PromoCode, map[string]any{"plan": pl.Code, "months": pl.Months})
+	inv, err := a.createInvoice(c, "subscription", helper.T(c, "Pro plan, {n} month(s)", "n", pl.Months), in.PaymentMethod, pl.Price, in.PromoCode, map[string]any{"plan": pl.Code, "months": pl.Months})
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, inv)
+	return helper.OK(c, inv)
 }
 
 func (a *API) coinTopUp(c fiber.Ctx) error {
@@ -338,10 +338,10 @@ func (a *API) coinTopUp(c fiber.Ctx) error {
 		PaymentMethod string  `json:"payment_method"`
 		PromoCode     string  `json:"promo_code"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	if in.Amount < 10000 {
 		v.Add("amount", "The minimum top-up is Rp 10,000.")
 	}
@@ -351,21 +351,21 @@ func (a *API) coinTopUp(c fiber.Ctx) error {
 	if err := v.Err(); err != nil {
 		return err
 	}
-	inv, err := a.createInvoice(c, "coin_topup", httpx.T(c, "Premium coin top-up"), in.PaymentMethod, in.Amount, in.PromoCode, map[string]any{})
+	inv, err := a.createInvoice(c, "coin_topup", helper.T(c, "Premium coin top-up"), in.PaymentMethod, in.Amount, in.PromoCode, map[string]any{})
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, inv)
+	return helper.OK(c, inv)
 }
 
 func (a *API) redeemVoucher(c fiber.Ctx) error {
 	var in struct {
 		Code string `json:"code"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	var out map[string]any
 	err := a.tx(c.Context(), func(tx pgx.Tx) error {
 		ctx := c.Context()
@@ -374,11 +374,11 @@ func (a *API) redeemVoucher(c fiber.Ctx) error {
 		err := tx.QueryRow(ctx, `UPDATE vouchers SET used_count = used_count + 1 WHERE upper(code)=upper($1) AND reward_type <> 'discount_percent' AND used_count < max_uses AND (expires_at IS NULL OR expires_at > now())
 			RETURNING code, reward_type, reward_amount`, strings.TrimSpace(in.Code)).Scan(&code, &typ, &amount)
 		if err != nil {
-			return httpx.Invalid("code", "This voucher is not valid or has been used up.")
+			return helper.Invalid("code", "This voucher is not valid or has been used up.")
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO voucher_redemptions (code, store_id) VALUES ($1,$2)`, code, p.StoreID); err != nil {
-			if db.IsUniqueViolation(err) {
-				return httpx.Invalid("code", "You have already used this voucher.")
+			if repositories.IsUniqueViolation(err) {
+				return helper.Invalid("code", "You have already used this voucher.")
 			}
 			return err
 		}
@@ -404,19 +404,19 @@ func (a *API) redeemVoucher(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, out)
+	return helper.OK(c, out)
 }
 
 func (a *API) invoice(c fiber.Ctx, id string) (map[string]any, error) {
-	row, err := db.JSONRow(c.Context(), a.DB, `SELECT `+invoiceCols+` FROM invoices WHERE id=$1 AND store_id=$2`, id, httpx.P(c).StoreID)
+	row, err := repositories.JSONRow(c.Context(), a.DB, `SELECT `+invoiceCols+` FROM invoices WHERE id=$1 AND store_id=$2`, id, helper.P(c).StoreID)
 	if err == nil && row == nil {
-		err = httpx.NotFound("Invoice")
+		err = helper.NotFound("Invoice")
 	}
 	return row, err
 }
 
 func (a *API) invoiceProof(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
@@ -425,7 +425,7 @@ func (a *API) invoiceProof(c fiber.Ctx) error {
 		return err
 	}
 	if inv["status"] != "pending" {
-		return httpx.Conflict("Only a pending invoice accepts a payment proof.")
+		return helper.Conflict("Only a pending invoice accepts a payment proof.")
 	}
 	up, err := a.saveUpload(c, "file", "payment_proof")
 	if err != nil {
@@ -434,35 +434,35 @@ func (a *API) invoiceProof(c fiber.Ctx) error {
 	if _, err := a.DB.Exec(c.Context(), `UPDATE invoices SET payment_proof_url=$2, sender_account_name=NULLIF($3,''), updated_at=now() WHERE id=$1`, id, up["url"], c.FormValue("sender_account_name")); err != nil {
 		return err
 	}
-	a.notify(c.Context(), a.DB, httpx.P(c).StoreID, nil, "back_office", "Payment proof received", "We are checking your transfer for {number}.", "billing", "number", fmt.Sprint(inv["invoice_number"]))
+	a.notify(c.Context(), a.DB, helper.P(c).StoreID, nil, "back_office", "Payment proof received", "We are checking your transfer for {number}.", "billing", "number", fmt.Sprint(inv["invoice_number"]))
 	inv, err = a.invoice(c, id)
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, inv)
+	return helper.OK(c, inv)
 }
 
 func (a *API) cancelInvoice(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
-	tag, err := a.DB.Exec(c.Context(), `UPDATE invoices SET status='cancelled', updated_at=now() WHERE id=$1 AND store_id=$2 AND status='pending'`, id, httpx.P(c).StoreID)
+	tag, err := a.DB.Exec(c.Context(), `UPDATE invoices SET status='cancelled', updated_at=now() WHERE id=$1 AND store_id=$2 AND status='pending'`, id, helper.P(c).StoreID)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return httpx.Conflict("Only a pending invoice can be cancelled.")
+		return helper.Conflict("Only a pending invoice can be cancelled.")
 	}
 	inv, err := a.invoice(c, id)
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, inv)
+	return helper.OK(c, inv)
 }
 
 func (a *API) invoicePDF(c fiber.Ctx) error {
-	id, err := httpx.ParamID(c, "id")
+	id, err := helper.ParamID(c, "id")
 	if err != nil {
 		return err
 	}
@@ -471,9 +471,9 @@ func (a *API) invoicePDF(c fiber.Ctx) error {
 		return err
 	}
 	var storeName string
-	_ = a.DB.QueryRow(c.Context(), `SELECT name FROM stores WHERE id=$1`, httpx.P(c).StoreID).Scan(&storeName)
+	_ = a.DB.QueryRow(c.Context(), `SELECT name FROM stores WHERE id=$1`, helper.P(c).StoreID).Scan(&storeName)
 	d := export.NewPDF(595, 842)
-	tr := httpx.Lang(c).T
+	tr := helper.Lang(c).T
 	d.Page()
 	d.Text(40, 790, 20, true, tr("INVOICE"))
 	d.Text(40, 766, 10, false, fmt.Sprint(inv["invoice_number"]))
@@ -505,7 +505,7 @@ func (a *API) invoicePDF(c fiber.Ctx) error {
 // ---------- plugins ----------
 
 func (a *API) listPlugins(c fiber.Ctx) error {
-	p := httpx.P(c)
+	p := helper.P(c)
 	rows, err := a.DB.Query(c.Context(), `SELECT code, status, trial_used, expires_at FROM store_plugins WHERE store_id=$1`, p.StoreID)
 	if err != nil {
 		return err
@@ -542,28 +542,28 @@ func (a *API) listPlugins(c fiber.Ctx) error {
 		}
 		features := make([]string, len(pl.Features))
 		for i, f := range pl.Features {
-			features[i] = httpx.T(c, f)
+			features[i] = helper.T(c, f)
 		}
-		out = append(out, fiber.Map{"code": pl.Code, "name": httpx.T(c, pl.Name), "description": httpx.T(c, pl.Description), "features": features,
+		out = append(out, fiber.Map{"code": pl.Code, "name": helper.T(c, pl.Name), "description": helper.T(c, pl.Description), "features": features,
 			"price_monthly": pl.Monthly, "price_yearly": pl.Monthly * 10, "status": status, "trial_available": !ok || !s.trialUsed, "expires_at": expires})
 	}
-	return httpx.OK(c, out)
+	return helper.OK(c, out)
 }
 
 func (a *API) subscribePlugin(c fiber.Ctx) error {
 	pl := pluginByCode(c.Params("code"))
 	if pl == nil {
-		return httpx.NotFound("Plugin")
+		return helper.NotFound("Plugin")
 	}
 	var in struct {
 		Period        string `json:"period"`
 		PaymentMethod string `json:"payment_method"`
 	}
-	if err := httpx.Decode(c, &in); err != nil {
+	if err := helper.Decode(c, &in); err != nil {
 		return err
 	}
 	months := map[string]int{"monthly": 1, "yearly": 12}[in.Period]
-	v := &httpx.Validation{}
+	v := &helper.Validation{}
 	if months == 0 {
 		v.Add("period", "Must be one of: monthly, yearly.")
 	}
@@ -577,27 +577,27 @@ func (a *API) subscribePlugin(c fiber.Ctx) error {
 	if months == 12 {
 		price = pl.Monthly * 10
 	}
-	inv, err := a.createInvoice(c, "plugin", httpx.T(c, "{plugin} plugin, {n} month(s)", "plugin", i18n.Tr(pl.Name), "n", months), in.PaymentMethod, price, "", map[string]any{"code": pl.Code, "months": months})
+	inv, err := a.createInvoice(c, "plugin", helper.T(c, "{plugin} plugin, {n} month(s)", "plugin", i18n.Tr(pl.Name), "n", months), in.PaymentMethod, price, "", map[string]any{"code": pl.Code, "months": months})
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, inv)
+	return helper.OK(c, inv)
 }
 
 func (a *API) trialPlugin(c fiber.Ctx) error {
 	pl := pluginByCode(c.Params("code"))
 	if pl == nil {
-		return httpx.NotFound("Plugin")
+		return helper.NotFound("Plugin")
 	}
-	p := httpx.P(c)
+	p := helper.P(c)
 	var out map[string]any
 	err := a.tx(c.Context(), func(tx pgx.Tx) error {
 		var used bool
 		err := tx.QueryRow(c.Context(), `SELECT trial_used OR status = 'active' FROM store_plugins WHERE store_id=$1 AND code=$2`, p.StoreID, pl.Code).Scan(&used)
 		if err == nil && used {
-			return httpx.Conflict("The free trial for this plugin was already used.")
+			return helper.Conflict("The free trial for this plugin was already used.")
 		}
-		out, err = db.JSONRow(c.Context(), tx, `INSERT INTO store_plugins (store_id, code, status, trial_used, expires_at) VALUES ($1,$2,'trial',true, now() + interval '7 days')
+		out, err = repositories.JSONRow(c.Context(), tx, `INSERT INTO store_plugins (store_id, code, status, trial_used, expires_at) VALUES ($1,$2,'trial',true, now() + interval '7 days')
 			ON CONFLICT (store_id, code) DO UPDATE SET status='trial', trial_used=true, expires_at = now() + interval '7 days'
 			RETURNING code, status, expires_at`, p.StoreID, pl.Code)
 		return err
@@ -605,5 +605,5 @@ func (a *API) trialPlugin(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return httpx.OK(c, out)
+	return helper.OK(c, out)
 }
