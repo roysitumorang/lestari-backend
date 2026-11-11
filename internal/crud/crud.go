@@ -356,7 +356,7 @@ func (r *Resource) orderBy(c fiber.Ctx) string {
 func (e *Engine) List(r *Resource) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		p := httpx.P(c)
-		pg := httpx.Pagination(c, 25)
+		pg := httpx.Paging(c, 25)
 		b := &Builder{}
 		where := strings.Join(r.listWhere(c, b, p), " AND ")
 		var total int

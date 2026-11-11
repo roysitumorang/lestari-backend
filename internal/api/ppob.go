@@ -113,7 +113,7 @@ func (a *API) listDeposits(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	pg := httpx.Pagination(c, 50)
+	pg := httpx.Paging(c, 50)
 	where := `branch_id=$1 AND created_at::date BETWEEN $2::date AND $3::date AND ($4 = '' OR reference_id ILIKE '%'||$4||'%' OR COALESCE(payment_method,'') ILIKE '%'||$4||'%')`
 	args := []any{p.BranchID, start, end, c.Query("q")}
 	var total int
@@ -130,7 +130,7 @@ func (a *API) listDeposits(c fiber.Ctx) error {
 	}
 	var trx float64
 	_ = a.DB.QueryRow(c.Context(), `SELECT COALESCE(sum(selling_price),0) FROM ppob_transactions WHERE branch_id=$1 AND status='success'`, p.BranchID).Scan(&trx)
-	return c.JSON(fiber.Map{"data": rows, "summary": fiber.Map{"balance": bal, "transaction_total": trx}, "meta": httpx.NewMeta(pg, total)})
+	return httpx.ListWith(c, rows, httpx.NewMeta(pg, total), httpx.Extras{Summary: fiber.Map{"balance": bal, "transaction_total": trx}})
 }
 
 func (a *API) createDeposit(c fiber.Ctx) error {

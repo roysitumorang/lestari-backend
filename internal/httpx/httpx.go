@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -13,11 +16,12 @@ import (
 
 	"github.com/goccy/go-json"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/requestid"
 
 	"github.com/roysitumorang/lestari-backend/internal/i18n"
 )
 
-// Error is rendered as {"error":{"code","message","fields"}} in the language of the request.
+// Error is rendered as a Response with the message and ErrorData{code, fields} in the language of the request.
 // Message and field messages are English text (dictionary keys) with optional {placeholders}.
 type Error struct {
 	Status  int
@@ -30,19 +34,17 @@ type Error struct {
 // Error returns the English message.
 func (e *Error) Error() string { return i18n.EN.T(e.Message, e.Args...) }
 
-// In renders the error body in a language.
-func (e *Error) In(l i18n.Lang) fiber.Map {
-	out := fiber.Map{"code": e.Code, "message": l.T(e.Message, e.Args...)}
+// In renders the error in a language: its code, message and field messages.
+func (e *Error) In(l i18n.Lang) (code, message string, fields map[string][]string) {
 	if len(e.Fields) > 0 {
-		f := make(map[string][]string, len(e.Fields))
+		fields = make(map[string][]string, len(e.Fields))
 		for k, msgs := range e.Fields {
 			for _, m := range msgs {
-				f[k] = append(f[k], m.In(l))
+				fields[k] = append(fields[k], m.In(l))
 			}
 		}
-		out["fields"] = f
 	}
-	return out
+	return e.Code, l.T(e.Message, e.Args...), fields
 }
 
 // NewError builds an error; args are {placeholder} name/value pairs for msg.
@@ -163,17 +165,95 @@ func ErrorHandler(log func(err error)) fiber.ErrorHandler {
 			e = NewError(500, "internal_error", "Something went wrong. Please try again.")
 		}
 		c.Set("Content-Language", string(Lang(c)))
-		return c.Status(e.Status).JSON(fiber.Map{"error": e.In(Lang(c))})
+		code, message, fields := e.In(Lang(c))
+		return NewResponse(e.Status).SetMessage(message).SetData(ErrorData{Code: code, Fields: fields}).WriteResponse(c)
 	}
 }
 
 // ---------- responses ----------
 
+// AppName is reported in every response ("app"); set at build time through config.
+var AppName = "lestari"
+
+// Response is the envelope of every JSON answer, success or error.
+//
+//	{"request_id","request_url","status_code","status","message","timestamp","latency","data","app"}
+//
+// Lists put a Pagination in data; errors put {"code", "fields"?} there.
+type Response struct {
+	RequestID  string    `json:"request_id" example:"6ba3451b-ac73-483e-8481-2ac53f5e75a2"`
+	RequestURL string    `json:"request_url" example:"GET http://localhost:8080/api/v1/taxes"`
+	StatusCode int       `json:"status_code" example:"200"`
+	Status     string    `json:"status" example:"OK"`
+	Message    string    `json:"message" example:""`
+	Timestamp  time.Time `json:"timestamp" example:"2026-11-11T14:22:47.608963985+07:00"`
+	Latency    string    `json:"latency" example:"7.746177ms"`
+	Data       any       `json:"data,omitempty"`
+	App        string    `json:"app" example:"lestari"`
+}
+
+func NewResponse(statusCode int) *Response {
+	return &Response{StatusCode: statusCode, Status: http.StatusText(statusCode), Timestamp: time.Now(), App: AppName}
+}
+
+func (r *Response) SetMessage(message string) *Response {
+	if r.StatusCode != fiber.StatusNoContent {
+		r.Message = message
+	}
+	return r
+}
+
+func (r *Response) SetData(data any) *Response {
+	if r.StatusCode != fiber.StatusNoContent {
+		r.Data = data
+	}
+	return r
+}
+
+func (r *Response) WriteResponse(c fiber.Ctx) error {
+	if r.StatusCode == fiber.StatusNoContent {
+		return c.SendStatus(r.StatusCode)
+	}
+	r.RequestURL = c.Method() + " " + c.BaseURL() + c.OriginalURL()
+	r.RequestID = requestid.FromContext(c)
+	r.Latency = time.Since(c.RequestCtx().Time()).String()
+	return c.Status(r.StatusCode).JSON(r)
+}
+
+// ErrorData is the data of an error response: a stable machine code and, for 422, messages per field.
+type ErrorData struct {
+	Code   string              `json:"code" example:"validation_failed"`
+	Fields map[string][]string `json:"fields,omitempty"`
+}
+
+// Pagination is the data of a list response.
+type Pagination struct {
+	Links struct {
+		First    string `json:"first" example:"http://localhost:8080/api/v1/taxes?per_page=25"`
+		Previous string `json:"previous" example:""`
+		Current  string `json:"current" example:"http://localhost:8080/api/v1/taxes?page=1&per_page=25"`
+		Next     string `json:"next" example:"http://localhost:8080/api/v1/taxes?page=2&per_page=25"`
+		Last     string `json:"last" example:"http://localhost:8080/api/v1/taxes?page=5&per_page=25"`
+	} `json:"links"`
+	Info struct {
+		Limit int `json:"limit" example:"25"`
+		Page  int `json:"page" example:"1"`
+		Pages int `json:"pages" example:"5"`
+		Total int `json:"total" example:"120"`
+	} `json:"info"`
+	Rows any `json:"rows"`
+	// reports only
+	Summary any `json:"summary,omitempty"`
+	Totals  any `json:"totals,omitempty"`
+	Chart   any `json:"chart,omitempty"`
+}
+
+// Meta carries the paging numbers of a list (page is 1-based).
 type Meta struct {
-	Page       int `json:"page"`
-	PerPage    int `json:"per_page"`
-	Total      int `json:"total"`
-	TotalPages int `json:"total_pages"`
+	Page       int
+	PerPage    int
+	Total      int
+	TotalPages int
 }
 
 func NewMeta(p Page, total int) Meta {
@@ -187,13 +267,58 @@ func NewMeta(p Page, total int) Meta {
 	return Meta{Page: p.Page, PerPage: p.PerPage, Total: total, TotalPages: tp}
 }
 
-func OK(c fiber.Ctx, data any) error { return c.JSON(fiber.Map{"data": data}) }
-func Created(c fiber.Ctx, data any) error {
-	return c.Status(201).JSON(fiber.Map{"data": data})
+// Unpaged is the Meta of a list that returns every row at once.
+func Unpaged(total int) Meta { return Meta{Page: 1, PerPage: total, Total: total, TotalPages: 1} }
+
+// NewPagination builds the list data with links to the neighbouring pages of the current request.
+func NewPagination(c fiber.Ctx, rows any, m Meta) *Pagination {
+	p := &Pagination{Rows: rows}
+	p.Info.Limit, p.Info.Page, p.Info.Pages, p.Info.Total = m.PerPage, m.Page, m.TotalPages, m.Total
+	base := c.BaseURL() + c.Path()
+	q, _ := url.ParseQuery(string(c.RequestCtx().QueryArgs().QueryString()))
+	link := func(page int) string {
+		u := maps.Clone(q)
+		if page > 1 {
+			u.Set("page", strconv.Itoa(page))
+		} else {
+			u.Del("page")
+		}
+		if len(u) == 0 {
+			return base
+		}
+		return base + "?" + u.Encode()
+	}
+	p.Links.First, p.Links.Current, p.Links.Last = link(1), link(m.Page), link(m.TotalPages)
+	if m.Page > 1 {
+		p.Links.Previous = link(m.Page - 1)
+	}
+	if m.Page < m.TotalPages {
+		p.Links.Next = link(m.Page + 1)
+	}
+	return p
 }
-func NoContent(c fiber.Ctx) error { return c.SendStatus(204) }
-func List(c fiber.Ctx, data any, meta Meta) error {
-	return c.JSON(fiber.Map{"data": data, "meta": meta})
+
+func OK(c fiber.Ctx, data any) error {
+	return NewResponse(fiber.StatusOK).SetData(data).WriteResponse(c)
+}
+func Created(c fiber.Ctx, data any) error {
+	return NewResponse(fiber.StatusCreated).SetData(data).WriteResponse(c)
+}
+func NoContent(c fiber.Ctx) error { return c.SendStatus(fiber.StatusNoContent) }
+
+// List answers with a Pagination of rows.
+func List(c fiber.Ctx, rows any, meta Meta) error {
+	return OK(c, NewPagination(c, rows, meta))
+}
+
+// Extras are the report additions to a list.
+type Extras struct{ Summary, Totals, Chart any }
+
+// ListWith is List plus a summary, totals row and chart.
+func ListWith(c fiber.Ctx, rows any, meta Meta, x Extras) error {
+	p := NewPagination(c, rows, meta)
+	p.Summary, p.Totals, p.Chart = x.Summary, x.Totals, x.Chart
+	return OK(c, p)
 }
 
 // ---------- request parsing ----------
@@ -204,7 +329,7 @@ type Page struct {
 	Offset  int
 }
 
-func Pagination(c fiber.Ctx, def int) Page {
+func Paging(c fiber.Ctx, def int) Page {
 	p := Page{Page: atoi(c.Query("page"), 1), PerPage: atoi(c.Query("per_page"), def)}
 	if p.Page < 1 {
 		p.Page = 1

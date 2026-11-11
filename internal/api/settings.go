@@ -292,7 +292,7 @@ func (a *API) storeQRCode(c fiber.Ctx) error {
 
 func (a *API) linkPageVisitors(c fiber.Ctx) error {
 	p := httpx.P(c)
-	pg := httpx.Pagination(c, 50)
+	pg := httpx.Paging(c, 50)
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM link_page_visits WHERE branch_id=$1`, p.BranchID).Scan(&total); err != nil {
 		return err

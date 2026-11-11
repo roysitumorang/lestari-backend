@@ -79,7 +79,7 @@ func (r *rq) row(sql string, args ...any) (map[string]any, error) {
 }
 
 func (a *API) newRQ(c fiber.Ctx, dated bool) (*rq, error) {
-	r := &rq{a: a, c: c, p: httpx.P(c), q: strings.TrimSpace(c.Query("q")), page: httpx.Pagination(c, 50)}
+	r := &rq{a: a, c: c, p: httpx.P(c), q: strings.TrimSpace(c.Query("q")), page: httpx.Paging(c, 50)}
 	if dated {
 		var err error
 		if r.start, r.end, err = httpx.DateRange(c, a.Loc); err != nil {
@@ -99,20 +99,21 @@ func (a *API) reportHandler(rp report) fiber.Handler {
 		if err != nil {
 			return err
 		}
-		out := fiber.Map{"data": res.rows}
+		meta := httpx.Unpaged(len(res.rows))
+		if res.paged {
+			meta = httpx.NewMeta(r.page, res.total)
+		}
+		x := httpx.Extras{}
 		if res.summary != nil {
-			out["summary"] = res.summary
+			x.Summary = res.summary
 		}
 		if res.totals != nil {
-			out["totals"] = res.totals
+			x.Totals = res.totals
 		}
 		if res.chart != nil {
-			out["chart"] = res.chart
+			x.Chart = res.chart
 		}
-		if res.paged {
-			out["meta"] = httpx.NewMeta(r.page, res.total)
-		}
-		return c.JSON(out)
+		return httpx.ListWith(c, res.rows, meta, x)
 	}
 }
 

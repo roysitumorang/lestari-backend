@@ -154,7 +154,7 @@ func (a *API) stockMovements(c fiber.Ctx) error {
 		return err
 	}
 	p := httpx.P(c)
-	pg := httpx.Pagination(c, 50)
+	pg := httpx.Paging(c, 50)
 	where := `m.product_id=$1 AND m.branch_id=$2 AND (NULLIF($3,'') IS NULL OR m.created_at::date >= NULLIF($3,'')::date) AND (NULLIF($4,'') IS NULL OR m.created_at::date <= NULLIF($4,'')::date)`
 	args := []any{pid, p.BranchID, c.Query("start_date"), c.Query("end_date")}
 	var total int

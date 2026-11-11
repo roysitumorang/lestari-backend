@@ -207,7 +207,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	// ---------- sales over the last 30 days ----------
 	var drawer string
 	if d := c.do("GET", "/cash-drawers", nil); d != nil {
-		if arr, ok := d["data"].([]any); ok && len(arr) > 0 {
+		if arr, ok := d["rows"].([]any); ok && len(arr) > 0 {
 			drawer, _ = arr[0].(map[string]any)["id"].(string)
 		}
 	}
@@ -258,7 +258,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 		"due_date": now.AddDate(0, 0, 14).Format("2006-01-02"), "items": []any{map[string]any{"product_id": productIDs[11], "quantity": 48}, map[string]any{"product_id": productIDs[9], "quantity": 5}}})
 	if credit != nil {
 		if recv := c.do("GET", "/receivables?status=unpaid", nil); recv != nil {
-			if arr, ok := recv["data"].([]any); ok && len(arr) > 0 {
+			if arr, ok := recv["rows"].([]any); ok && len(arr) > 0 {
 				rid, _ := arr[0].(map[string]any)["id"].(string)
 				c.do("POST", fmt.Sprintf("/receivables/%s/payments", rid), map[string]any{"payment_date": now.Format("2006-01-02"), "amount": 50000, "payment_method": "cash"})
 			}
@@ -272,7 +272,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 		"items": []any{map[string]any{"product_id": productIDs[11], "quantity": 2, "points_redeemed": 50}}})
 	// a purchase return
 	if pu := c.do("GET", "/purchases?per_page=1", nil); pu != nil {
-		if arr, ok := pu["data"].([]any); ok && len(arr) > 0 {
+		if arr, ok := pu["rows"].([]any); ok && len(arr) > 0 {
 			first := arr[0].(map[string]any)
 			if full := c.do("GET", fmt.Sprintf("/purchases/%v", first["id"]), nil); full != nil {
 				if items, ok := full["items"].([]any); ok && len(items) > 0 {
@@ -321,7 +321,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 		_, c.err = a.DB.Exec(ctx, `INSERT INTO ppob_deposits (branch_id, reference_id, type, payment_method, amount, status, balance_after) SELECT id, $2, 'top_up', 'virtual_account', 500000, 'success', 500000 FROM branches WHERE store_id=$1 AND is_head_office`, info.StoreID, ref)
 	}
 	if prices := c.do("GET", "/ppob/prices/prepaid?per_page=5", nil); prices != nil {
-		if arr, ok := prices["data"].([]any); ok {
+		if arr, ok := prices["rows"].([]any); ok {
 			for i, x := range arr {
 				c.do("POST", "/ppob/transactions", map[string]any{"price_id": x.(map[string]any)["id"], "customer_number": fmt.Sprintf("08121111%04d", i)})
 			}

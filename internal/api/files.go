@@ -159,7 +159,7 @@ func (a *API) notification(c fiber.Ctx, id string) (map[string]any, error) {
 
 func (a *API) listNotifications(c fiber.Ctx) error {
 	p := httpx.P(c)
-	pg := httpx.Pagination(c, 25)
+	pg := httpx.Paging(c, 25)
 	where := `store_id=$1 AND (branch_id IS NULL OR branch_id=$2) AND ($3 = '' OR source = $3)
 		AND (NULLIF($4,'') IS NULL OR created_at::date >= NULLIF($4,'')::date) AND (NULLIF($5,'') IS NULL OR created_at::date <= NULLIF($5,'')::date)`
 	args := []any{p.StoreID, p.BranchID, c.Query("source"), c.Query("start_date"), c.Query("end_date")}

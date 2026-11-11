@@ -276,7 +276,7 @@ func (a *API) listInvoices(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	pg := httpx.Pagination(c, 50)
+	pg := httpx.Paging(c, 50)
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM invoices WHERE `+where, args...).Scan(&total); err != nil {
 		return err
@@ -289,7 +289,7 @@ func (a *API) listInvoices(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(fiber.Map{"data": rows, "summary": summary, "meta": httpx.NewMeta(pg, total)})
+	return httpx.ListWith(c, rows, httpx.NewMeta(pg, total), httpx.Extras{Summary: summary})
 }
 
 func (a *API) exportInvoices(c fiber.Ctx) error {

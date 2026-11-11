@@ -128,7 +128,7 @@ func (a *API) pointHistory(c fiber.Ctx) error {
 		return err
 	}
 	p := httpx.P(c)
-	pg := httpx.Pagination(c, 50)
+	pg := httpx.Paging(c, 50)
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM point_ledger l JOIN customers cu ON cu.id = l.customer_id WHERE l.customer_id=$1 AND cu.branch_id=$2`, id, p.BranchID).Scan(&total); err != nil {
 		return err

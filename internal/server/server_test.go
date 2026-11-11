@@ -123,8 +123,15 @@ func trim(b []byte) string {
 	return string(b)
 }
 
+// rows returns data.rows of a list response.
+func rows(m map[string]any) []any {
+	d, _ := m["data"].(map[string]any)
+	arr, _ := d["rows"].([]any)
+	return arr
+}
+
 func first(m map[string]any) map[string]any {
-	if arr, ok := m["data"].([]any); ok && len(arr) > 0 {
+	if arr := rows(m); len(arr) > 0 {
 		r, _ := arr[0].(map[string]any)
 		return r
 	}
@@ -309,7 +316,7 @@ func TestIntegrationWorkflows(t *testing.T) {
 	// stock adjustment + movements
 	h.json("POST", fmt.Sprintf("/inventory/stocks/%v/adjustments", pid), map[string]any{"mode": "set", "quantity": 40, "reason": "correction"}, 200)
 	mv := h.json("GET", fmt.Sprintf("/inventory/stocks/%v/movements", pid), nil, 200)
-	if arr, _ := mv["data"].([]any); len(arr) != 3 {
+	if arr := rows(mv); len(arr) != 3 {
 		t.Errorf("expected 3 movements (opening, sale, adjustment), got %d", len(arr))
 	}
 	// opname approve sets stock exactly
@@ -338,7 +345,7 @@ func TestIntegrationWorkflows(t *testing.T) {
 	// transfer with confirmation: accept as the receiving branch
 	br := h.json("GET", "/branches", nil, 200)
 	var target string
-	for _, x := range br["data"].([]any) {
+	for _, x := range rows(br) {
 		if m := x.(map[string]any); m["is_head_office"] == false {
 			target = m["id"].(string)
 		}
@@ -406,7 +413,8 @@ func TestIntegrationWorkflows(t *testing.T) {
 
 	// validation and auth errors use the error envelope
 	bad := h.json("POST", "/products", map[string]any{"selling_price": "x"}, 422)
-	if e, ok := bad["error"].(map[string]any); !ok || e["fields"] == nil {
+	if e, ok := bad["data"].(map[string]any); !ok || e["fields"] == nil || e["code"] != "validation_failed" || bad["message"] == "" ||
+		bad["status_code"] != float64(422) || bad["request_id"] == "" || bad["app"] != "lestari" {
 		t.Errorf("validation envelope: %v", bad)
 	}
 	h.token = "nope"
@@ -421,13 +429,13 @@ func TestIntegrationLanguage(t *testing.T) {
 	h := setup(t)
 	errorBody := func(b []byte) (string, map[string][]string) {
 		var e struct {
-			Error struct {
-				Message string              `json:"message"`
-				Fields  map[string][]string `json:"fields"`
-			} `json:"error"`
+			Message string `json:"message"`
+			Data    struct {
+				Fields map[string][]string `json:"fields"`
+			} `json:"data"`
 		}
 		_ = json.Unmarshal(b, &e)
-		return e.Error.Message, e.Error.Fields
+		return e.Message, e.Data.Fields
 	}
 
 	// English by default

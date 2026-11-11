@@ -69,7 +69,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*fiber.App, *
 		if err := pool.Ping(c.Context()); err != nil {
 			return c.Status(503).JSON(fiber.Map{"status": "unavailable"})
 		}
-		return c.JSON(fiber.Map{"status": "ok"})
+		return httpx.OK(c, fiber.Map{"status": "ok"})
 	})
 
 	a := api.New(pool, cfg, log)

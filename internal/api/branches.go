@@ -223,7 +223,7 @@ func (a *API) syncBranchPrices(c fiber.Ctx) error {
 
 func (a *API) branchBilling(c fiber.Ctx) error {
 	p := httpx.P(c)
-	pg := httpx.Pagination(c, 25)
+	pg := httpx.Paging(c, 25)
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM branches WHERE store_id=$1 AND deleted_at IS NULL`, p.StoreID).Scan(&total); err != nil {
 		return err

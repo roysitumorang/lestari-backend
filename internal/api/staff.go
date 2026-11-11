@@ -225,7 +225,7 @@ func (a *API) listAttendance(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	pg := httpx.Pagination(c, 50)
+	pg := httpx.Paging(c, 50)
 	summary, err := db.JSONRow(c.Context(), a.DB, `SELECT count(*) AS attendance_count, count(*) FILTER (WHERE a.status='late') AS late_count,
 		COALESCE(round((sum(EXTRACT(EPOCH FROM (a.clock_out_at - a.clock_in_at))) / 3600)::numeric, 2), 0) AS total_hours
 		FROM staff_attendances a WHERE `+where, args...)
@@ -237,7 +237,7 @@ func (a *API) listAttendance(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(fiber.Map{"data": rows, "summary": summary, "meta": httpx.NewMeta(pg, int(num(summary["attendance_count"])))})
+	return httpx.ListWith(c, rows, httpx.NewMeta(pg, int(num(summary["attendance_count"]))), httpx.Extras{Summary: summary})
 }
 
 func (a *API) exportAttendance(c fiber.Ctx) error {

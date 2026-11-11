@@ -283,7 +283,7 @@ func (a *API) twoFactorDisable(c fiber.Ctx) error {
 
 func (a *API) activityList(c fiber.Ctx, userID string) error {
 	p := httpx.P(c)
-	pg := httpx.Pagination(c, 50)
+	pg := httpx.Paging(c, 50)
 	var total int
 	if err := a.DB.QueryRow(c.Context(), `SELECT count(*) FROM activity_logs WHERE store_id=$1 AND user_id=$2`, p.StoreID, userID).Scan(&total); err != nil {
 		return err
