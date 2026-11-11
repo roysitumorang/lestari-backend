@@ -173,13 +173,17 @@ func (q *taxRepository) CreateTax(
 			, rate
 			, is_inclusive
 			, is_active
-		) VALUES ($1, $2, $3, $4, $5)
+			, created_at
+			, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING `+taxColumns,
 		request.BranchID,
 		request.Name,
 		request.Rate,
 		request.IsInclusive,
 		request.IsActive,
+		request.CreatedAt,
+		request.UpdatedAt,
 	))
 	if err != nil {
 		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
@@ -188,20 +192,25 @@ func (q *taxRepository) CreateTax(
 	return response, nil
 }
 
-// UpdateTax locks the row, then writes every column of request (the service merges the changes first).
+// UpdateTax locks the row and writes only the attributes whose value differs from the stored one. When
+// nothing changed no UPDATE is executed and the stored row is returned as it is; otherwise updated_at is set
+// to request.UpdatedAt (the caller's time.Now()).
 func (q *taxRepository) UpdateTax(
 	ctx context.Context,
 	tx pgx.Tx,
 	request *models.Tax,
 ) (*models.Tax, error) {
 	ctxt := "TaxRepository-UpdateTax"
-	var exists bool
-	err := tx.QueryRow(
+	response, err := scanTax(tx.QueryRow(
 		ctx,
-		`SELECT TRUE FROM taxes WHERE id = $1 AND branch_id = $2 FOR NO KEY UPDATE`,
+		`SELECT `+taxColumns+`
+		FROM taxes
+		WHERE id = $1
+			AND branch_id = $2
+		FOR NO KEY UPDATE`,
 		request.ID,
 		request.BranchID,
-	).Scan(&exists)
+	))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, models.ErrTaxNotFound
 	}
@@ -209,23 +218,48 @@ func (q *taxRepository) UpdateTax(
 		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
 		return nil, err
 	}
-	response, err := scanTax(tx.QueryRow(
-		ctx,
-		`UPDATE taxes SET
-			name = $1
-			, rate = $2
-			, is_inclusive = $3
-			, is_active = $4
-			, updated_at = NOW()
-		WHERE id = $5
-		RETURNING `+taxColumns,
-		request.Name,
-		request.Rate,
-		request.IsInclusive,
-		request.IsActive,
-		request.ID,
-	))
-	if err != nil {
+	var params []any
+	var n int
+	sb := pools.BuilderPool.Get()
+	defer pools.BuilderPool.Put(sb)
+	sb.Reset()
+	_, _ = sb.WriteString("UPDATE taxes SET")
+	if response.Name != request.Name {
+		params = append(params, request.Name)
+		if n = len(params); n > 1 {
+			_, _ = sb.WriteString(",")
+		}
+		_, _ = fmt.Fprintf(sb, " name = $%d", n)
+	}
+	if response.Rate != request.Rate {
+		params = append(params, request.Rate)
+		if n = len(params); n > 1 {
+			_, _ = sb.WriteString(",")
+		}
+		_, _ = fmt.Fprintf(sb, " rate = $%d", n)
+	}
+	if response.IsInclusive != request.IsInclusive {
+		params = append(params, request.IsInclusive)
+		if n = len(params); n > 1 {
+			_, _ = sb.WriteString(",")
+		}
+		_, _ = fmt.Fprintf(sb, " is_inclusive = $%d", n)
+	}
+	if response.IsActive != request.IsActive {
+		params = append(params, request.IsActive)
+		if n = len(params); n > 1 {
+			_, _ = sb.WriteString(",")
+		}
+		_, _ = fmt.Fprintf(sb, " is_active = $%d", n)
+	}
+	if len(params) == 0 {
+		return response, nil
+	}
+	params = append(params, request.UpdatedAt)
+	_, _ = fmt.Fprintf(sb, ", updated_at = $%d", len(params))
+	params = append(params, request.ID)
+	_, _ = fmt.Fprintf(sb, " WHERE id = $%d RETURNING %s", len(params), taxColumns)
+	if response, err = scanTax(tx.QueryRow(ctx, sb.String(), params...)); err != nil {
 		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
 		return nil, err
 	}

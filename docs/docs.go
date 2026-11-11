@@ -381,7 +381,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Only the attributes present in the body are changed.",
+                "description": "Only the attributes present in the body are changed. When no value differs from the stored one nothing is written and updated_at stays as it was.",
                 "tags": [
                     "Taxes"
                 ],

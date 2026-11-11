@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -54,10 +55,10 @@ func taxError(err error) error {
 //	@Tags			Taxes
 //	@Param			q			query		string	false	"search in name"
 //	@Param			is_active	query		bool	false	"only active / inactive taxes"
-//	@Param			sort		query		string	false	"sort field"	Enums(name, rate, is_inclusive, is_active, created_at, updated_at)	default(name)
-//	@Param			order		query		string	false	"sort direction"	Enums(asc, desc)	default(asc)
-//	@Param			page		query		int		false	"page, from 1"	default(1)
-//	@Param			per_page	query		int		false	"rows per page"	default(25)	maximum(1000)
+//	@Param			sort		query		string	false	"sort field"		Enums(name, rate, is_inclusive, is_active, created_at, updated_at)	default(name)
+//	@Param			order		query		string	false	"sort direction"	Enums(asc, desc)													default(asc)
+//	@Param			page		query		int		false	"page, from 1"		default(1)
+//	@Param			per_page	query		int		false	"rows per page"		default(25)	maximum(1000)
 //	@Success		200			{object}	helper.Response{data=helper.Pagination{rows=[]models.Tax}}
 //	@Failure		401			{object}	helper.Response{data=helper.ErrorData}
 //	@Router			/taxes [get]
@@ -118,9 +119,12 @@ func (q *taxController) V1Create(c fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	now := time.Now()
 	tax := request.Apply(&models.Tax{
-		BranchID: currentBranchID(c),
-		IsActive: true,
+		BranchID:  currentBranchID(c),
+		IsActive:  true,
+		CreatedAt: now,
+		UpdatedAt: now,
 	})
 	tx, err := repositories.BeginTx(ctx)
 	if err != nil {
@@ -143,7 +147,7 @@ func (q *taxController) V1Create(c fiber.Ctx) error {
 // V1Update godoc
 //
 //	@Summary		Update a tax
-//	@Description	Only the attributes present in the body are changed.
+//	@Description	Only the attributes present in the body are changed. When no value differs from the stored one nothing is written and updated_at stays as it was.
 //	@Tags			Taxes
 //	@Param			id		path		string				true	"tax id (UUID)"
 //	@Param			request	body		models.TaxRequest	true	"attributes to change"
@@ -178,7 +182,8 @@ func (q *taxController) V1Update(c fiber.Ctx) error {
 		return err
 	}
 	defer rollback(ctx, tx, ctxt)
-	response, err := q.taxService.UpdateTax(ctx, tx, request.Apply(tax))
+	request.Apply(tax).UpdatedAt = time.Now()
+	response, err := q.taxService.UpdateTax(ctx, tx, tax)
 	if err != nil {
 		return taxError(err)
 	}

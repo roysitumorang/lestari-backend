@@ -122,6 +122,25 @@ func trim(b []byte) string {
 	return string(b)
 }
 
+// upperKeys lists the JSON attribute names (as paths) that contain an upper-case letter.
+func upperKeys(v any, path string) []string {
+	var out []string
+	switch x := v.(type) {
+	case map[string]any:
+		for k, child := range x {
+			if k != strings.ToLower(k) {
+				out = append(out, path+k)
+			}
+			out = append(out, upperKeys(child, path+k+".")...)
+		}
+	case []any:
+		if len(x) > 0 {
+			out = append(out, upperKeys(x[0], path)...)
+		}
+	}
+	return out
+}
+
 // rows returns data.rows of a list response.
 func rows(m map[string]any) []any {
 	d, _ := m["data"].(map[string]any)
@@ -257,6 +276,9 @@ func TestIntegrationEveryGET(t *testing.T) {
 		var m map[string]any
 		if err := json.Unmarshal(body, &m); err != nil || m["data"] == nil {
 			t.Errorf("GET %s: missing data envelope: %s", p, trim(body))
+		}
+		for _, k := range upperKeys(m, "") {
+			t.Errorf("GET %s: JSON attribute %q is not lower case", p, k)
 		}
 	}
 	t.Logf("tested %d GET endpoints, skipped (no row to address): %v", tested, skipped)
@@ -447,6 +469,17 @@ func TestIntegrationTaxes(t *testing.T) {
 	updated := h.json("PUT", "/taxes/"+id, map[string]any{"is_inclusive": true}, 200)["data"].(map[string]any)
 	if updated["is_inclusive"] != true || updated["name"] != "Zz Service tax" || updated["rate"] != 7.5 {
 		t.Fatalf("updated: %v", updated)
+	}
+	if updated["created_at"] != created["created_at"] || updated["updated_at"] == created["updated_at"] {
+		t.Fatalf("a change must move updated_at only: created %v, updated %v", created, updated)
+	}
+	// the same values again: nothing is written, updated_at stays
+	same := h.json("PUT", "/taxes/"+id, map[string]any{"name": "Zz Service tax", "rate": 7.5, "is_inclusive": true, "is_active": true}, 200)["data"].(map[string]any)
+	if same["updated_at"] != updated["updated_at"] {
+		t.Fatalf("unchanged update moved updated_at: %v → %v", updated["updated_at"], same["updated_at"])
+	}
+	if one := h.json("PUT", "/taxes/"+id, map[string]any{"name": "Zz Service tax", "rate": 8}, 200)["data"].(map[string]any); one["rate"] != float64(8) || one["updated_at"] == same["updated_at"] || one["is_inclusive"] != true {
+		t.Fatalf("single change: %v", one)
 	}
 	h.json("PUT", "/taxes/"+id, map[string]any{"name": ""}, 422)
 	// list: search, filter, sort, paging

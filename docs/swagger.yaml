@@ -334,7 +334,9 @@ paths:
       tags:
       - Taxes
     put:
-      description: Only the attributes present in the body are changed.
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
       parameters:
       - description: tax id (UUID)
         in: path
