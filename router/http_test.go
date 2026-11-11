@@ -597,3 +597,114 @@ func TestTOTP(t *testing.T) {
 		t.Fatal("wrong code accepted")
 	}
 }
+
+// TestIntegrationProductsAndStock covers the product extras, stock adjustments and the stock opname rules.
+func TestIntegrationProductsAndStock(t *testing.T) {
+	h := setup(t)
+	today := time.Now().Format("2006-01-02")
+	data := func(m map[string]any) map[string]any { d, _ := m["data"].(map[string]any); return d }
+
+	// a product without a SKU gets the suggested one; a service never tracks stock
+	next := data(h.json("GET", "/products/generate-sku", nil, 200))["sku"]
+	p := data(h.json("POST", "/products", map[string]any{"name": "Stock probe", "selling_price": 7000, "purchase_price": 4000, "stock": 10}, 201))
+	if p["sku"] != next || p["stock"].(float64) != 10 {
+		t.Fatalf("created product: sku %v (want %v) stock %v", p["sku"], next, p["stock"])
+	}
+	pid := p["id"].(string)
+	svc := data(h.json("POST", "/products", map[string]any{"name": "Probe service", "selling_price": 1000, "item_type": "service"}, 201))
+	if svc["track_stock"] != false {
+		t.Errorf("service tracks stock: %v", svc["track_stock"])
+	}
+	// SKU checks ignore case and can leave out the product being edited
+	sku := p["sku"].(string)
+	if data(h.json("GET", "/products/check-sku?sku="+strings.ToLower(sku), nil, 200))["available"] != false {
+		t.Error("taken SKU reported as available")
+	}
+	if data(h.json("GET", "/products/check-sku?sku="+sku+"&exclude_id="+pid, nil, 200))["available"] != true {
+		t.Error("own SKU reported as taken")
+	}
+	h.json("GET", "/products/check-sku", nil, 422)
+	h.json("POST", "/products", map[string]any{"name": "Same SKU", "selling_price": 1, "sku": sku}, 409)
+	// stock cannot be changed through the product, and an unchanged update keeps updated_at
+	up := data(h.json("PUT", "/products/"+pid, map[string]any{"stock": 99, "name": "Stock probe"}, 200))
+	if up["stock"].(float64) != 10 || up["updated_at"] != p["updated_at"] {
+		t.Errorf("update: stock %v updated_at %v (was %v)", up["stock"], up["updated_at"], p["updated_at"])
+	}
+	// a duplicate has a new SKU, no barcode and no stock
+	dup := data(h.json("POST", "/products/"+pid+"/duplicate", nil, 201))
+	if dup["sku"] == sku || dup["stock"].(float64) != 0 || dup["name"] != "Stock probe (copy)" {
+		t.Errorf("duplicate: %v %v %v", dup["sku"], dup["stock"], dup["name"])
+	}
+	for _, path := range []string{"/products/barcodes?product_ids[]=" + pid, "/products/barcodes?symbology=qr&paper_size=label_50x25", "/products/labels"} {
+		if code, b, _ := h.call("GET", path, nil); code != 200 || len(b) < 200 {
+			t.Errorf("%s: status %d, %d bytes", path, code, len(b))
+		}
+	}
+
+	// adjustments: add with a cost averages the purchase price; an unchanged set records nothing
+	adj := data(h.json("POST", "/inventory/stocks/"+pid+"/adjustments", map[string]any{"mode": "add", "quantity": 10, "unit_cost": 6000, "reason": "received"}, 200))
+	if adj["stock"].(float64) != 20 || adj["unit_cost"].(float64) != 5000 {
+		t.Errorf("add 10 @ 6000 to 10 @ 4000: stock %v cost %v", adj["stock"], adj["unit_cost"])
+	}
+	h.json("POST", "/inventory/stocks/"+pid+"/adjustments", map[string]any{"mode": "set", "quantity": 20}, 200)
+	h.json("POST", "/inventory/stocks/"+pid+"/adjustments", map[string]any{"mode": "subtract", "quantity": 5, "note": "broken"}, 200)
+	h.json("POST", "/inventory/stocks/"+pid+"/adjustments", map[string]any{"mode": "double", "quantity": -1, "reason": "whim"}, 422)
+	h.json("POST", "/inventory/stocks/0190a1b2-0000-7000-8000-000000000000/adjustments", map[string]any{"mode": "add", "quantity": 1}, 404)
+	mv := rows(h.json("GET", "/inventory/stocks/"+pid+"/movements", nil, 200))
+	if len(mv) != 3 {
+		t.Fatalf("expected 3 movements (opening, add, subtract), got %d", len(mv))
+	}
+	if last := mv[0].(map[string]any); last["quantity_change"].(float64) != -5 || last["stock_after"].(float64) != 15 || last["note"] != "broken" {
+		t.Errorf("latest movement: %v", last)
+	}
+	if len(rows(h.json("GET", "/inventory/stocks?stock_status=out&q=Stock%20probe", nil, 200))) != 1 {
+		t.Error("the duplicate (stock 0) should be the only probe that is out of stock")
+	}
+	if code, b, _ := h.call("GET", "/inventory/stocks/export?format=csv&q=Stock%20probe", nil); code != 200 || !strings.Contains(string(b), sku) {
+		t.Errorf("stock export: status %d", code)
+	}
+
+	// stock opname: needs items of this branch, can be rejected once, and cannot be deleted after approval
+	opname := map[string]any{"opname_date": today, "performed_by_name": "Test", "performed_by_role": "owner"}
+	h.json("POST", "/stock-opnames", opname, 422)
+	opname["items"] = []any{map[string]any{"product_id": "0190a1b2-0000-7000-8000-000000000000", "physical_stock": 1}}
+	h.json("POST", "/stock-opnames", opname, 422)
+	opname["items"] = []any{map[string]any{"product_id": pid, "physical_stock": 12, "note": "recount"}}
+	rejected := data(h.json("POST", "/stock-opnames", opname, 201))
+	if items, _ := rejected["items"].([]any); len(items) != 1 || items[0].(map[string]any)["difference"].(float64) != -3 || rejected["status"] != "pending" {
+		t.Fatalf("created opname: %v", rejected)
+	}
+	rid := rejected["id"].(string)
+	if got := data(h.json("POST", "/stock-opnames/"+rid+"/reject", map[string]any{"reason": "wrong shelf"}, 200)); got["status"] != "rejected" || got["reject_reason"] != "wrong shelf" {
+		t.Errorf("rejected opname: %v %v", got["status"], got["reject_reason"])
+	}
+	h.json("POST", "/stock-opnames/"+rid+"/reject", nil, 409)
+	h.json("POST", "/stock-opnames/"+rid+"/approve", nil, 409)
+	approved := data(h.json("POST", "/stock-opnames", opname, 201))
+	aid := approved["id"].(string)
+	if approved["code"] == rejected["code"] {
+		t.Errorf("two opnames share the code %v", approved["code"])
+	}
+	h.json("POST", "/stock-opnames/"+aid+"/approve", nil, 200)
+	if r := first(h.json("GET", "/inventory/stocks?q="+sku, nil, 200)); r == nil || r["stock"].(float64) != 12 {
+		t.Errorf("stock after approval: %v", r)
+	}
+	if code, b, _ := h.call("GET", "/stock-opnames/"+aid+"/export?format=csv", nil); code != 200 || !strings.Contains(string(b), sku) {
+		t.Errorf("opname export: status %d", code)
+	}
+	h.json("DELETE", "/stock-opnames/"+aid, nil, 409)
+	h.json("POST", "/stock-opnames/bulk-delete", map[string]any{"ids": []any{rid, aid}}, 409)
+	h.json("DELETE", "/stock-opnames/"+rid, nil, 204)
+	h.json("GET", "/stock-opnames/"+rid, nil, 404)
+
+	// a deleted product disappears from the lists and frees its SKU
+	h.json("DELETE", "/products/"+pid, nil, 204)
+	h.json("GET", "/products/"+pid, nil, 404)
+	if data(h.json("GET", "/products/check-sku?sku="+sku, nil, 200))["available"] != true {
+		t.Error("the SKU of a deleted product should be free")
+	}
+	job := data(h.json("POST", "/inventory/stocks/recalculate", nil, 200))
+	if job["status"] != "queued" || job["job_id"] == nil {
+		t.Errorf("recalculate: %v", job)
+	}
+}

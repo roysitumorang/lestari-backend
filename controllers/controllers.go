@@ -73,3 +73,16 @@ func writeError(err error) error {
 }
 
 const xlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+// currentStoreID is the store of the signed-in user.
+func currentStoreID(c fiber.Ctx) uuid.UUID {
+	id, _ := uuid.Parse(helper.P(c).StoreID)
+	return id
+}
+
+// currentActor is the signed-in user as recorded on stock movements and documents.
+func currentActor(c fiber.Ctx) models.Actor {
+	p := helper.P(c)
+	id, _ := uuid.Parse(p.UserID)
+	return models.Actor{ID: id, Name: p.Name}
+}

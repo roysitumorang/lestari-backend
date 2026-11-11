@@ -4482,6 +4482,621 @@
                 }
             }
         },
+        "/inventory/stocks": {
+            "get": {
+                "description": "The stock, unit cost and stock value of every product of the active branch that tracks stock.",
+                "tags": [
+                    "Stock"
+                ],
+                "summary": "List stock levels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "search in name, sku",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only products of this category",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "in_stock",
+                            "low",
+                            "out"
+                        ],
+                        "type": "string",
+                        "description": "in_stock, low or out",
+                        "name": "stock_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "name",
+                            "sku",
+                            "category_name",
+                            "stock",
+                            "unit",
+                            "minimum_stock",
+                            "unit_cost",
+                            "stock_value",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "description": "sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "sort direction",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "page, from 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "type": "integer",
+                        "default": 25,
+                        "description": "rows per page",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/helper.Pagination"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "rows": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/models.Stock"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inventory/stocks/export": {
+            "get": {
+                "description": "The rows of the list (same filters and sorting, up to 50,000) as a file.",
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "text/csv",
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Stock"
+                ],
+                "summary": "Export stock levels",
+                "parameters": [
+                    {
+                        "enum": [
+                            "xlsx",
+                            "csv",
+                            "pdf"
+                        ],
+                        "type": "string",
+                        "default": "xlsx",
+                        "description": "file format",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search in name, sku",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only products of this category",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "in_stock",
+                            "low",
+                            "out"
+                        ],
+                        "type": "string",
+                        "description": "in_stock, low or out",
+                        "name": "stock_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "name",
+                            "sku",
+                            "category_name",
+                            "stock",
+                            "unit",
+                            "minimum_stock",
+                            "unit_cost",
+                            "stock_value",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "description": "sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "sort direction",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inventory/stocks/import": {
+            "post": {
+                "description": "Upload an .xlsx or .csv file that follows the template. The stock of each product, found by its SKU, becomes the stock of its row and the difference is recorded as an adjustment; unit_cost, when given, becomes the purchase price. A row with an unknown SKU is reported and skipped.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "tags": [
+                    "Stock"
+                ],
+                "summary": "Import stock counts",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": ".xlsx or .csv file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.ImportResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inventory/stocks/import-template": {
+            "get": {
+                "description": "An .xlsx file with the columns sku*, stock*, unit_cost and note.",
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "Stock"
+                ],
+                "summary": "Download the stock import template",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inventory/stocks/recalculate": {
+            "post": {
+                "description": "Starts a background job that sets the stock of every tracked product of the active branch to the sum of its stock movements.",
+                "tags": [
+                    "Stock"
+                ],
+                "summary": "Recalculate stock",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.JobResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inventory/stocks/{product_id}/adjustments": {
+            "post": {
+                "description": "Sets, adds to or subtracts from the stock and records a stock movement. Nothing is recorded when the stock stays the same.",
+                "tags": [
+                    "Stock"
+                ],
+                "summary": "Adjust the stock of a product",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "product id (UUID)",
+                        "name": "product_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "adjustment",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.StockAdjustmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.Stock"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/inventory/stocks/{product_id}/movements": {
+            "get": {
+                "tags": [
+                    "Stock"
+                ],
+                "summary": "List the stock history of a product",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "product id (UUID)",
+                        "name": "product_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "movements on or after this date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "movements on or before this date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "page, from 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "type": "integer",
+                        "default": 50,
+                        "description": "rows per page",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/helper.Pagination"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "rows": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/models.StockMovement"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/payment-methods": {
             "get": {
                 "description": "Payment methods of the active branch.",
@@ -4973,6 +5588,1242 @@
                 }
             }
         },
+        "/products": {
+            "get": {
+                "description": "Products of the active branch.",
+                "tags": [
+                    "Products"
+                ],
+                "summary": "List products",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "search in name, sku, barcode",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "product",
+                            "service"
+                        ],
+                        "type": "string",
+                        "description": "only rows with this item type",
+                        "name": "item_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only rows with this category id",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "in_stock",
+                            "low",
+                            "out"
+                        ],
+                        "type": "string",
+                        "description": "in_stock, low or out",
+                        "name": "stock_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "image_url",
+                            "name",
+                            "item_type",
+                            "sku",
+                            "barcode",
+                            "category_id",
+                            "unit",
+                            "selling_price",
+                            "purchase_price",
+                            "price_type",
+                            "tax_id",
+                            "discount_type",
+                            "discount_value",
+                            "wholesale_prices",
+                            "customer_type_prices",
+                            "track_stock",
+                            "stock",
+                            "minimum_stock",
+                            "shelf_location",
+                            "weight_grams",
+                            "track_imei",
+                            "units",
+                            "variants",
+                            "ingredients",
+                            "points_earned",
+                            "points_to_redeem",
+                            "show_in_online_store",
+                            "description",
+                            "online_description",
+                            "category.name",
+                            "tax.name",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "description": "sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "sort direction",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "page, from 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "type": "integer",
+                        "default": 25,
+                        "description": "rows per page",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/helper.Pagination"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "rows": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/models.Product"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Create a product",
+                "parameters": [
+                    {
+                        "description": "product",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ProductRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.Product"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/barcodes": {
+            "get": {
+                "description": "A printable PDF sheet with one barcode (or QR code) per product; a product without a barcode uses its SKU.",
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Print barcodes",
+                "parameters": [
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "product ids (UUID); all products when empty",
+                        "name": "product_ids[]",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 1,
+                        "description": "copies of each product",
+                        "name": "copies",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "code128",
+                            "qr"
+                        ],
+                        "type": "string",
+                        "default": "code128",
+                        "description": "code type",
+                        "name": "symbology",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "print the selling price",
+                        "name": "show_price",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "a4",
+                            "label_33x15",
+                            "label_50x25"
+                        ],
+                        "type": "string",
+                        "default": "a4",
+                        "description": "sheet or label size",
+                        "name": "paper_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/bulk-delete": {
+            "post": {
+                "description": "All or nothing: an unknown id (404) or a product still in use (409) deletes none.",
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Delete several products",
+                "parameters": [
+                    {
+                        "description": "ids to delete",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BulkDeleteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.DeletedResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/check-sku": {
+            "get": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Check whether a SKU is free",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "SKU to check (case-insensitive)",
+                        "name": "sku",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "product id (UUID) to leave out, when editing that product",
+                        "name": "exclude_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.AvailabilityResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/export": {
+            "get": {
+                "description": "The rows of the list (same filters and sorting, up to 50,000) as a file.",
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "text/csv",
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Export products",
+                "parameters": [
+                    {
+                        "enum": [
+                            "xlsx",
+                            "csv",
+                            "pdf"
+                        ],
+                        "type": "string",
+                        "default": "xlsx",
+                        "description": "file format",
+                        "name": "format",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "search in name, sku, barcode",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "product",
+                            "service"
+                        ],
+                        "type": "string",
+                        "description": "only rows with this item type",
+                        "name": "item_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only rows with this category id",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "in_stock",
+                            "low",
+                            "out"
+                        ],
+                        "type": "string",
+                        "description": "in_stock, low or out",
+                        "name": "stock_status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "image_url",
+                            "name",
+                            "item_type",
+                            "sku",
+                            "barcode",
+                            "category_id",
+                            "unit",
+                            "selling_price",
+                            "purchase_price",
+                            "price_type",
+                            "tax_id",
+                            "discount_type",
+                            "discount_value",
+                            "wholesale_prices",
+                            "customer_type_prices",
+                            "track_stock",
+                            "stock",
+                            "minimum_stock",
+                            "shelf_location",
+                            "weight_grams",
+                            "track_imei",
+                            "units",
+                            "variants",
+                            "ingredients",
+                            "points_earned",
+                            "points_to_redeem",
+                            "show_in_online_store",
+                            "description",
+                            "online_description",
+                            "category.name",
+                            "tax.name",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "description": "sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "sort direction",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/generate-sku": {
+            "get": {
+                "description": "The SKU a new product gets when none is sent: P followed by the next free six-digit number.",
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Suggest the next SKU",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.SKUResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/import": {
+            "post": {
+                "description": "Upload an .xlsx or .csv file that follows the template. mode=create adds every row; mode=update changes the rows matched by sku. Each row is saved on its own, so one bad row does not stop the others.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Import products",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": ".xlsx or .csv file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "create",
+                            "update"
+                        ],
+                        "type": "string",
+                        "default": "create",
+                        "description": "create or update",
+                        "name": "mode",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.ImportResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/import-template": {
+            "get": {
+                "description": "An .xlsx file with one column per attribute; a * marks the required ones.",
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Download the product import template",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/labels": {
+            "get": {
+                "description": "An .xlsx file with the name, SKU, barcode, price, unit and category of the chosen products, for label software.",
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Download price labels",
+                "parameters": [
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "product ids (UUID); all products when empty",
+                        "name": "product_ids[]",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/{id}": {
+            "get": {
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Get one product",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "product id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.Product"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Only the attributes present in the body are changed. When no value differs from the stored one nothing is written and updated_at stays as it was.",
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Update a product",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "product id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "attributes to change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ProductRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.Product"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "A product that other records still use cannot be deleted (409).",
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Delete a product",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "product id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/products/{id}/duplicate": {
+            "post": {
+                "description": "Creates a copy named \"\u003cname\u003e (copy)\" with a new automatic SKU, no barcode and no stock.",
+                "tags": [
+                    "Products"
+                ],
+                "summary": "Duplicate a product",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "product id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.Product"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/promotions": {
             "get": {
                 "description": "Promotions of the active branch.",
@@ -5404,6 +7255,876 @@
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-opnames": {
+            "get": {
+                "description": "Stock opnames of the active branch.",
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "List stock opnames",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "search in code, performed_by_name",
+                        "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "only rows with this status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "code",
+                            "opname_date",
+                            "performed_by_name",
+                            "performed_by_role",
+                            "status",
+                            "note",
+                            "reject_reason",
+                            "item_count",
+                            "difference_value",
+                            "created_at",
+                            "updated_at"
+                        ],
+                        "type": "string",
+                        "description": "sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "asc",
+                        "description": "sort direction",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "page, from 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "type": "integer",
+                        "default": 25,
+                        "description": "rows per page",
+                        "name": "per_page",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/helper.Pagination"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "rows": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/models.StockOpname"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Records the counted stock of the listed products next to the stock on record. Stock only changes when the opname is approved.",
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Create a stock opname",
+                "parameters": [
+                    {
+                        "description": "stock opname",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.StockOpnameRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StockOpname"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-opnames/bulk-delete": {
+            "post": {
+                "description": "All or nothing: an unknown id (404) or an approved stock opname (409) deletes none.",
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Delete several stock opnames",
+                "parameters": [
+                    {
+                        "description": "ids to delete",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.BulkDeleteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.DeletedResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-opnames/import": {
+            "post": {
+                "description": "Upload an .xlsx or .csv file that follows the template. The rows become the items of one new pending stock opname dated today; a row with an unknown SKU is reported and left out.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Import a stock count",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": ".xlsx or .csv file",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "who counted; the signed-in user by default",
+                        "name": "performed_by_name",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "name shown in the note of the opname",
+                        "name": "filename",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.ImportResult"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-opnames/import-template": {
+            "get": {
+                "description": "An .xlsx file with the columns sku*, physical_stock* and note.",
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Download the stock opname import template",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-opnames/{id}": {
+            "get": {
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Get one stock opname",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock opname id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StockOpname"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "An approved stock opname has already changed stock and cannot be deleted (409).",
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Delete a stock opname",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock opname id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-opnames/{id}/approve": {
+            "post": {
+                "description": "Sets the stock of every counted product to its counted quantity and records the differences as stock movements. Only a pending stock opname can be approved.",
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Approve a stock opname",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock opname id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StockOpname"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-opnames/{id}/export": {
+            "get": {
+                "produces": [
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "text/csv",
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Export the items of a stock opname",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock opname id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "xlsx",
+                            "csv",
+                            "pdf"
+                        ],
+                        "type": "string",
+                        "default": "xlsx",
+                        "description": "file format",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/helper.ErrorData"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "/stock-opnames/{id}/reject": {
+            "post": {
+                "description": "Closes a pending stock opname without changing stock.",
+                "tags": [
+                    "Stock opname"
+                ],
+                "summary": "Reject a stock opname",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "stock opname id (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "why it is rejected",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/models.StockOpnameRejectRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/helper.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/models.StockOpname"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
                     },
                     "401": {
                         "description": "Unauthorized",
@@ -6956,6 +9677,15 @@
                 }
             }
         },
+        "models.AvailabilityResponse": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "models.BulkDeleteRequest": {
             "type": "object",
             "properties": {
@@ -7656,6 +10386,19 @@
                 }
             }
         },
+        "models.JobResponse": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "queued"
+                }
+            }
+        },
         "models.PaymentMethod": {
             "type": "object",
             "properties": {
@@ -7770,6 +10513,319 @@
                         "other"
                     ],
                     "example": "qris"
+                }
+            }
+        },
+        "models.Product": {
+            "type": "object",
+            "properties": {
+                "barcode": {
+                    "type": "string",
+                    "example": "8991234567890"
+                },
+                "category": {
+                    "$ref": "#/definitions/models.Reference"
+                },
+                "category_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                },
+                "customer_type_prices": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Iced milk coffee with palm sugar"
+                },
+                "discount_type": {
+                    "type": "string",
+                    "enum": [
+                        "percent",
+                        "amount"
+                    ],
+                    "example": "percent"
+                },
+                "discount_value": {
+                    "type": "number",
+                    "example": 10
+                },
+                "id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "image_url": {
+                    "type": "string",
+                    "example": "/uploads/kopi-susu.jpg"
+                },
+                "ingredients": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "item_type": {
+                    "type": "string",
+                    "enum": [
+                        "product",
+                        "service"
+                    ],
+                    "example": "product"
+                },
+                "minimum_stock": {
+                    "type": "number",
+                    "example": 5
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Kopi Susu Gula Aren"
+                },
+                "online_description": {
+                    "type": "string",
+                    "example": "Best seller"
+                },
+                "points_earned": {
+                    "type": "number",
+                    "example": 1
+                },
+                "points_to_redeem": {
+                    "type": "number",
+                    "example": 20
+                },
+                "price_type": {
+                    "type": "string",
+                    "enum": [
+                        "single",
+                        "wholesale",
+                        "customer_type"
+                    ],
+                    "example": "single"
+                },
+                "purchase_price": {
+                    "type": "number",
+                    "example": 9500
+                },
+                "selling_price": {
+                    "type": "number",
+                    "example": 18000
+                },
+                "shelf_location": {
+                    "type": "string",
+                    "example": "A-3"
+                },
+                "show_in_online_store": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "sku": {
+                    "type": "string",
+                    "example": "P000001"
+                },
+                "stock": {
+                    "type": "number",
+                    "example": 24
+                },
+                "tax": {
+                    "$ref": "#/definitions/models.Reference"
+                },
+                "tax_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "track_imei": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "track_stock": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "unit": {
+                    "type": "string",
+                    "example": "cup"
+                },
+                "units": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                },
+                "variants": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "weight_grams": {
+                    "type": "number",
+                    "example": 250
+                },
+                "wholesale_prices": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                }
+            }
+        },
+        "models.ProductRequest": {
+            "type": "object",
+            "properties": {
+                "barcode": {
+                    "type": "string",
+                    "example": "8991234567890"
+                },
+                "category_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "customer_type_prices": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Iced milk coffee with palm sugar"
+                },
+                "discount_type": {
+                    "type": "string",
+                    "enum": [
+                        "percent",
+                        "amount"
+                    ],
+                    "example": "percent"
+                },
+                "discount_value": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 10
+                },
+                "image_url": {
+                    "type": "string",
+                    "example": "/uploads/kopi-susu.jpg"
+                },
+                "ingredients": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "item_type": {
+                    "type": "string",
+                    "enum": [
+                        "product",
+                        "service"
+                    ],
+                    "example": "product"
+                },
+                "minimum_stock": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 5
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Kopi Susu Gula Aren"
+                },
+                "online_description": {
+                    "type": "string",
+                    "example": "Best seller"
+                },
+                "points_earned": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 1
+                },
+                "points_to_redeem": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 20
+                },
+                "price_type": {
+                    "type": "string",
+                    "enum": [
+                        "single",
+                        "wholesale",
+                        "customer_type"
+                    ],
+                    "example": "single"
+                },
+                "purchase_price": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 9500
+                },
+                "selling_price": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 18000
+                },
+                "shelf_location": {
+                    "type": "string",
+                    "example": "A-3"
+                },
+                "show_in_online_store": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "sku": {
+                    "type": "string",
+                    "example": "P000001"
+                },
+                "stock": {
+                    "type": "number",
+                    "example": 24
+                },
+                "tax_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "track_imei": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "track_stock": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "unit": {
+                    "type": "string",
+                    "example": "cup"
+                },
+                "units": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "variants": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "weight_grams": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 250
+                },
+                "wholesale_prices": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
                 }
             }
         },
@@ -7981,6 +11037,332 @@
                 "name": {
                     "type": "string",
                     "example": "Member"
+                }
+            }
+        },
+        "models.SKUResponse": {
+            "type": "object",
+            "properties": {
+                "sku": {
+                    "type": "string",
+                    "example": "P000042"
+                }
+            }
+        },
+        "models.Stock": {
+            "type": "object",
+            "properties": {
+                "category_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "category_name": {
+                    "type": "string",
+                    "example": "Beverages"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                },
+                "image_url": {
+                    "type": "string",
+                    "example": "/uploads/kopi-susu.jpg"
+                },
+                "minimum_stock": {
+                    "type": "number",
+                    "example": 5
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Kopi Susu Gula Aren"
+                },
+                "product_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "sku": {
+                    "type": "string",
+                    "example": "P000001"
+                },
+                "stock": {
+                    "type": "number",
+                    "example": 24
+                },
+                "stock_value": {
+                    "type": "number",
+                    "example": 228000
+                },
+                "unit": {
+                    "type": "string",
+                    "example": "cup"
+                },
+                "unit_cost": {
+                    "type": "number",
+                    "example": 9500
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                }
+            }
+        },
+        "models.StockAdjustmentRequest": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "description": "set makes the stock exactly quantity; add and subtract change it by quantity",
+                    "type": "string",
+                    "enum": [
+                        "set",
+                        "add",
+                        "subtract"
+                    ],
+                    "example": "set"
+                },
+                "note": {
+                    "type": "string",
+                    "example": "recount after closing"
+                },
+                "quantity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 40
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "correction",
+                        "damaged",
+                        "expired",
+                        "lost",
+                        "received",
+                        "other"
+                    ],
+                    "example": "correction"
+                },
+                "unit_cost": {
+                    "description": "with mode add: the cost of the units received; the product's purchase price becomes the weighted average",
+                    "type": "number",
+                    "example": 9500
+                }
+            }
+        },
+        "models.StockMovement": {
+            "type": "object",
+            "properties": {
+                "actor_name": {
+                    "type": "string",
+                    "example": "Roy"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "note": {
+                    "type": "string",
+                    "example": "damaged: dropped on delivery"
+                },
+                "quantity_change": {
+                    "type": "number",
+                    "example": -2
+                },
+                "reference": {
+                    "type": "string",
+                    "example": "Manual adjustment"
+                },
+                "stock_after": {
+                    "type": "number",
+                    "example": 22
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "adjustment",
+                        "opname",
+                        "sale",
+                        "purchase",
+                        "return",
+                        "transfer_in",
+                        "transfer_out"
+                    ],
+                    "example": "adjustment"
+                },
+                "unit_cost": {
+                    "type": "number",
+                    "example": 9500
+                }
+            }
+        },
+        "models.StockOpname": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "example": "SO/20261108/0001"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                },
+                "difference_value": {
+                    "type": "number",
+                    "example": -15000
+                },
+                "id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "item_count": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "items": {
+                    "description": "Items are the counted products; they are sent with a single stock opname, not with the list.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.StockOpnameItem"
+                    }
+                },
+                "note": {
+                    "type": "string",
+                    "example": "Monthly count"
+                },
+                "opname_date": {
+                    "type": "string",
+                    "example": "2026-11-08"
+                },
+                "performed_by_name": {
+                    "type": "string",
+                    "example": "Roy"
+                },
+                "performed_by_role": {
+                    "type": "string",
+                    "enum": [
+                        "owner",
+                        "administrator",
+                        "manager",
+                        "cashier"
+                    ],
+                    "example": "owner"
+                },
+                "reject_reason": {
+                    "type": "string",
+                    "example": ""
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "approved",
+                        "rejected"
+                    ],
+                    "example": "pending"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2026-11-08T10:32:00+07:00"
+                }
+            }
+        },
+        "models.StockOpnameItem": {
+            "type": "object",
+            "properties": {
+                "difference": {
+                    "type": "number",
+                    "example": -2
+                },
+                "note": {
+                    "type": "string",
+                    "example": "two cups broken"
+                },
+                "physical_stock": {
+                    "type": "number",
+                    "example": 22
+                },
+                "product_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                },
+                "product_name": {
+                    "type": "string",
+                    "example": "Kopi Susu Gula Aren"
+                },
+                "sku": {
+                    "type": "string",
+                    "example": "P000001"
+                },
+                "system_stock": {
+                    "type": "number",
+                    "example": 24
+                },
+                "unit_cost": {
+                    "type": "number",
+                    "example": 9500
+                }
+            }
+        },
+        "models.StockOpnameItemRequest": {
+            "type": "object",
+            "properties": {
+                "note": {
+                    "type": "string",
+                    "example": "two cups broken"
+                },
+                "physical_stock": {
+                    "type": "number",
+                    "minimum": 0,
+                    "example": 22
+                },
+                "product_id": {
+                    "type": "string",
+                    "example": "019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"
+                }
+            }
+        },
+        "models.StockOpnameRejectRequest": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "example": "Counted during opening hours"
+                }
+            }
+        },
+        "models.StockOpnameRequest": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "at least one counted product",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.StockOpnameItemRequest"
+                    }
+                },
+                "note": {
+                    "type": "string",
+                    "example": "Monthly count"
+                },
+                "opname_date": {
+                    "type": "string",
+                    "example": "2026-11-08"
+                },
+                "performed_by_name": {
+                    "type": "string",
+                    "example": "Roy"
+                },
+                "performed_by_role": {
+                    "type": "string",
+                    "enum": [
+                        "owner",
+                        "administrator",
+                        "manager",
+                        "cashier"
+                    ],
+                    "example": "owner"
                 }
             }
         },

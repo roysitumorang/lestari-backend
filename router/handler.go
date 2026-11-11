@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,6 +39,10 @@ type Service struct {
 	PaymentMethodService services.PaymentMethodService
 	PromotionService     services.PromotionService
 	CommissionService    services.CommissionService
+	JobService           services.JobService
+	ProductService       services.ProductService
+	StockService         services.StockService
+	StockOpnameService   services.StockOpnameService
 	// API holds the handlers that have not been moved to controllers yet.
 	API *api.API
 }
@@ -64,6 +69,9 @@ func MakeHandler(ctx context.Context, cfg config.Config) (*Service, error) {
 // NewService builds the service graph on existing pools (nil pools are enough to list the routes).
 func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	helper.AppName = config.AppName
+	if location, err := time.LoadLocation(cfg.Timezone); err == nil {
+		helper.Location = location
+	}
 	repositories.SetDbWrite(dbWrite)
 	legacy := api.New(dbWrite, cfg, helper.NewLogger())
 	taxRepository := repositories.NewTaxRepository(dbRead, dbWrite)
@@ -78,6 +86,10 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	paymentMethodRepository := repositories.NewPaymentMethodRepository(dbRead, dbWrite)
 	promotionRepository := repositories.NewPromotionRepository(dbRead, dbWrite)
 	commissionRepository := repositories.NewCommissionRepository(dbRead, dbWrite)
+	jobRepository := repositories.NewJobRepository(dbRead, dbWrite)
+	productRepository := repositories.NewProductRepository(dbRead, dbWrite)
+	stockRepository := repositories.NewStockRepository(dbRead, dbWrite)
+	stockOpnameRepository := repositories.NewStockOpnameRepository(dbRead, dbWrite)
 	taxService := services.NewTaxService(taxRepository)
 	categoryService := services.NewCategoryService(categoryRepository)
 	cashDrawerService := services.NewCashDrawerService(cashDrawerRepository)
@@ -90,6 +102,10 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	paymentMethodService := services.NewPaymentMethodService(paymentMethodRepository)
 	promotionService := services.NewPromotionService(promotionRepository)
 	commissionService := services.NewCommissionService(commissionRepository)
+	jobService := services.NewJobService(jobRepository)
+	productService := services.NewProductService(productRepository, stockRepository)
+	stockService := services.NewStockService(stockRepository, productRepository, jobService)
+	stockOpnameService := services.NewStockOpnameService(stockOpnameRepository, productRepository, stockRepository)
 	return &Service{
 		Config:               cfg,
 		DbRead:               dbRead,
@@ -108,6 +124,10 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 		PaymentMethodService: paymentMethodService,
 		PromotionService:     promotionService,
 		CommissionService:    commissionService,
+		JobService:           jobService,
+		ProductService:       productService,
+		StockService:         stockService,
+		StockOpnameService:   stockOpnameService,
 		API:                  legacy,
 	}
 }

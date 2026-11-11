@@ -175,6 +175,9 @@ func ErrorHandler(log func(err error)) fiber.ErrorHandler {
 // AppName is reported in every response ("app"); set at build time through config.
 var AppName = "lestari"
 
+// Location is the time zone business dates are read in (document numbers, "today"); set from APP_TIMEZONE.
+var Location = time.Local
+
 // Response is the envelope of every JSON answer, success or error.
 //
 //	{"request_id","request_url","status_code","status","message","timestamp","latency","data","app"}

@@ -91,3 +91,9 @@ type DeletedResponse struct {
 type BulkDeleteRequest struct {
 	IDs []string `json:"ids" example:"019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a,019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b"`
 }
+
+// Actor is the signed-in user a change is recorded under (stock movements, documents).
+type Actor struct {
+	ID   uuid.UUID
+	Name string
+}
