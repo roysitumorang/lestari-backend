@@ -79,13 +79,21 @@ i18n/                   English / Bahasa Indonesia: Lang.T(), Accept-Language pa
 export/                 XLSX, CSV, PDF writer (text, tables, Code 128, QR)
 docs/                   generated Swagger spec (make doc), served at /swagger/index.html outside production
 seeds/                  demo store, created through the HTTP API
-internal/api, crud      endpoints not converted to the layers above yet (taxes are; the rest follow group by group)
+internal/api, crud      endpoints not converted to the layers above yet (see "Conversion status")
 ```
 
 Resources that are plain records (products, customers, taxes, …) are declared once as a `crud.Resource`
 (fields, types, validation, lookups, filters, hooks); the engine generates SQL, validation errors, the JSON
 shape, CSV/XLSX import & export and an import template. Business operations (sales, purchases, stock,
 transfers, debts, billing, reports) are explicit handlers that run in transactions.
+
+## Conversion status
+
+The API is being moved from one generic CRUD engine to explicit model / sanitizer / repository / service / controller
+files per entity. Converted so far: taxes, categories, cash drawers, suppliers, customer types, customers, cash in &
+out, discounts, fees, payment methods, promotions and commissions (72 operations, all with Swagger examples).
+Everything else is still served by `internal/api` and `internal/crud` and behaves as before; both packages are
+deleted when the last group is converted.
 
 ## Languages
 
