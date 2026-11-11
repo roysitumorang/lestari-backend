@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"uuid"
 
@@ -137,4 +138,16 @@ func ReferenceExists(ctx context.Context, tx pgx.Tx, table, scopeColumn string, 
 		return false, err
 	}
 	return exists, nil
+}
+
+// equalJSON reports whether two JSON documents hold the same value, whatever their spacing or key order.
+func equalJSON(a, b json.RawMessage) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return len(a) == len(b)
+	}
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	return reflect.DeepEqual(x, y)
 }

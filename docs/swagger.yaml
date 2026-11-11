@@ -165,6 +165,88 @@ definitions:
         example: 1
         type: integer
     type: object
+  models.Commission:
+    properties:
+      basis:
+        enum:
+        - product
+        - transaction
+        example: product
+        type: string
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: Barista bonus
+        type: string
+      product_ids:
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        items:
+          type: string
+        type: array
+      staff_ids:
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        items:
+          type: string
+        type: array
+      type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      value:
+        example: 2
+        type: number
+    type: object
+  models.CommissionRequest:
+    properties:
+      basis:
+        enum:
+        - product
+        - transaction
+        example: product
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: Barista bonus
+        type: string
+      product_ids:
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        items:
+          type: string
+        type: array
+      staff_ids:
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        items:
+          type: string
+        type: array
+      type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      value:
+        example: 2
+        minimum: 0
+        type: number
+    type: object
   models.Customer:
     properties:
       address:
@@ -298,6 +380,106 @@ definitions:
         example: 3
         type: integer
     type: object
+  models.Discount:
+    properties:
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: Member day
+        type: string
+      type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      value:
+        example: 10
+        type: number
+    type: object
+  models.DiscountRequest:
+    properties:
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: Member day
+        type: string
+      type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      value:
+        example: 10
+        minimum: 0
+        type: number
+    type: object
+  models.Fee:
+    properties:
+      amount:
+        example: 2000
+        type: number
+      amount_type:
+        enum:
+        - percent
+        - amount
+        example: amount
+        type: string
+      applies_to:
+        enum:
+        - sale
+        - purchase
+        - both
+        example: sale
+        type: string
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      name:
+        example: Packaging
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.FeeRequest:
+    properties:
+      amount:
+        example: 2000
+        minimum: 0
+        type: number
+      amount_type:
+        enum:
+        - percent
+        - amount
+        example: amount
+        type: string
+      applies_to:
+        enum:
+        - sale
+        - purchase
+        - both
+        example: sale
+        type: string
+      name:
+        example: Packaging
+        type: string
+    type: object
   models.FinanceEntry:
     properties:
       amount:
@@ -410,6 +592,239 @@ definitions:
       updated:
         example: 3
         type: integer
+    type: object
+  models.PaymentMethod:
+    properties:
+      charge_fee_to_customer:
+        example: true
+        type: boolean
+      code:
+        example: QR
+        type: string
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      edc_card_rates:
+        items:
+          type: object
+        type: array
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      mdr_type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      mdr_value:
+        example: 0.7
+        type: number
+      name:
+        example: QRIS
+        type: string
+      type:
+        enum:
+        - cash
+        - debit
+        - credit_card
+        - qris
+        - e_wallet
+        - bank_transfer
+        - other
+        example: qris
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.PaymentMethodRequest:
+    properties:
+      charge_fee_to_customer:
+        example: true
+        type: boolean
+      code:
+        example: QR
+        type: string
+      edc_card_rates:
+        items:
+          type: object
+        type: array
+      is_active:
+        example: true
+        type: boolean
+      mdr_type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      mdr_value:
+        example: 0.7
+        minimum: 0
+        type: number
+      name:
+        example: QRIS
+        type: string
+      type:
+        enum:
+        - cash
+        - debit
+        - credit_card
+        - qris
+        - e_wallet
+        - bank_transfer
+        - other
+        example: qris
+        type: string
+    type: object
+  models.Promotion:
+    properties:
+      buy_quantity:
+        example: 2
+        type: number
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      customer_type_ids:
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        items:
+          type: string
+        type: array
+      days:
+        example:
+        - saturday
+        - sunday
+        items:
+          type: string
+        type: array
+      description:
+        example: 10% off on weekends
+        type: string
+      discount_type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      discount_value:
+        example: 10
+        type: number
+      end_date:
+        example: "2026-11-30"
+        type: string
+      end_time:
+        example: "21:00"
+        type: string
+      get_quantity:
+        example: 1
+        type: number
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      minimum_purchase:
+        example: 50000
+        type: number
+      name:
+        example: Weekend deal
+        type: string
+      products:
+        items:
+          type: object
+        type: array
+      start_date:
+        example: "2026-11-01"
+        type: string
+      start_time:
+        example: "09:00"
+        type: string
+      type:
+        enum:
+        - product_discount
+        - buy_x_get_y
+        - minimum_purchase
+        example: product_discount
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.PromotionRequest:
+    properties:
+      buy_quantity:
+        example: 2
+        minimum: 1
+        type: number
+      customer_type_ids:
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        items:
+          type: string
+        type: array
+      days:
+        example:
+        - saturday
+        - sunday
+        items:
+          type: string
+        type: array
+      description:
+        example: 10% off on weekends
+        type: string
+      discount_type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      discount_value:
+        example: 10
+        minimum: 0
+        type: number
+      end_date:
+        example: "2026-11-30"
+        type: string
+      end_time:
+        example: "21:00"
+        type: string
+      get_quantity:
+        example: 1
+        minimum: 1
+        type: number
+      is_active:
+        example: true
+        type: boolean
+      minimum_purchase:
+        example: 50000
+        minimum: 0
+        type: number
+      name:
+        example: Weekend deal
+        type: string
+      products:
+        items:
+          type: object
+        type: array
+      start_date:
+        example: "2026-11-01"
+        type: string
+      start_time:
+        example: "09:00"
+        type: string
+      type:
+        enum:
+        - product_discount
+        - buy_x_get_y
+        - minimum_purchase
+        example: product_discount
+        type: string
     type: object
   models.Reference:
     properties:
@@ -1104,6 +1519,270 @@ paths:
       summary: Delete several categories
       tags:
       - Categories
+  /commissions:
+    get:
+      description: Commissions of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - basis
+        - type
+        - value
+        - staff_ids
+        - product_ids
+        - is_active
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.Commission'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List commissions
+      tags:
+      - Commissions
+    post:
+      parameters:
+      - description: commission rule
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CommissionRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Commission'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a commission rule
+      tags:
+      - Commissions
+  /commissions/{id}:
+    delete:
+      description: A commission rule that other records still use cannot be deleted
+        (409).
+      parameters:
+      - description: commission rule id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a commission rule
+      tags:
+      - Commissions
+    get:
+      parameters:
+      - description: commission rule id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Commission'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one commission rule
+      tags:
+      - Commissions
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: commission rule id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CommissionRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Commission'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a commission rule
+      tags:
+      - Commissions
   /customer-types:
     get:
       description: Customer types of the active branch.
@@ -1842,6 +2521,598 @@ paths:
       summary: Download the customer import template
       tags:
       - Customers
+  /discounts:
+    get:
+      description: Discounts of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: only rows with this is active
+        in: query
+        name: is_active
+        type: boolean
+      - description: sort field
+        enum:
+        - name
+        - type
+        - value
+        - is_active
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.Discount'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List discounts
+      tags:
+      - Discounts
+    post:
+      parameters:
+      - description: discount
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.DiscountRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Discount'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a discount
+      tags:
+      - Discounts
+  /discounts/{id}:
+    delete:
+      description: A discount that other records still use cannot be deleted (409).
+      parameters:
+      - description: discount id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a discount
+      tags:
+      - Discounts
+    get:
+      parameters:
+      - description: discount id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Discount'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one discount
+      tags:
+      - Discounts
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: discount id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.DiscountRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Discount'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a discount
+      tags:
+      - Discounts
+  /discounts/bulk-delete:
+    post:
+      description: 'All or nothing: an unknown id (404) or a discount still in use
+        (409) deletes none.'
+      parameters:
+      - description: ids to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BulkDeleteRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.DeletedResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete several discounts
+      tags:
+      - Discounts
+  /fees:
+    get:
+      description: Fees of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: only rows with this applies to
+        enum:
+        - sale
+        - purchase
+        - both
+        in: query
+        name: applies_to
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - amount_type
+        - amount
+        - applies_to
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.Fee'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List fees
+      tags:
+      - Fees
+    post:
+      parameters:
+      - description: fee
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.FeeRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Fee'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a fee
+      tags:
+      - Fees
+  /fees/{id}:
+    delete:
+      description: A fee that other records still use cannot be deleted (409).
+      parameters:
+      - description: fee id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a fee
+      tags:
+      - Fees
+    get:
+      parameters:
+      - description: fee id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Fee'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one fee
+      tags:
+      - Fees
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: fee id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.FeeRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Fee'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a fee
+      tags:
+      - Fees
   /finance-entries:
     get:
       description: Finance entries of the active branch.
@@ -2200,6 +3471,567 @@ paths:
       summary: Export finance entries
       tags:
       - Cash in & out
+  /payment-methods:
+    get:
+      description: Payment methods of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: only rows with this type
+        enum:
+        - cash
+        - debit
+        - credit_card
+        - qris
+        - e_wallet
+        - bank_transfer
+        - other
+        in: query
+        name: type
+        type: string
+      - description: only rows with this is active
+        in: query
+        name: is_active
+        type: boolean
+      - description: sort field
+        enum:
+        - name
+        - type
+        - code
+        - mdr_type
+        - mdr_value
+        - charge_fee_to_customer
+        - edc_card_rates
+        - is_active
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.PaymentMethod'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List payment methods
+      tags:
+      - Payment methods
+    post:
+      parameters:
+      - description: payment method
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.PaymentMethodRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.PaymentMethod'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a payment method
+      tags:
+      - Payment methods
+  /payment-methods/{id}:
+    delete:
+      description: A payment method that other records still use cannot be deleted
+        (409).
+      parameters:
+      - description: payment method id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a payment method
+      tags:
+      - Payment methods
+    get:
+      parameters:
+      - description: payment method id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.PaymentMethod'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one payment method
+      tags:
+      - Payment methods
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: payment method id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.PaymentMethodRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.PaymentMethod'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a payment method
+      tags:
+      - Payment methods
+  /promotions:
+    get:
+      description: Promotions of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: active, scheduled or ended
+        enum:
+        - active
+        - scheduled
+        - ended
+        in: query
+        name: status
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - type
+        - start_date
+        - end_date
+        - start_time
+        - end_time
+        - days
+        - customer_type_ids
+        - discount_type
+        - discount_value
+        - minimum_purchase
+        - buy_quantity
+        - get_quantity
+        - products
+        - is_active
+        - description
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.Promotion'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List promotions
+      tags:
+      - Promotions
+    post:
+      parameters:
+      - description: promotion
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.PromotionRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Promotion'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a promotion
+      tags:
+      - Promotions
+  /promotions/{id}:
+    delete:
+      description: A promotion that other records still use cannot be deleted (409).
+      parameters:
+      - description: promotion id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a promotion
+      tags:
+      - Promotions
+    get:
+      parameters:
+      - description: promotion id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Promotion'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one promotion
+      tags:
+      - Promotions
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: promotion id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.PromotionRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Promotion'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a promotion
+      tags:
+      - Promotions
   /suppliers:
     get:
       description: Suppliers of the active branch.

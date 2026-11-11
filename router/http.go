@@ -111,6 +111,26 @@ func (q *Service) NewApp(log *slog.Logger) *fiber.App {
 		q.AuthService,
 		q.FinanceEntryService,
 	).Mount(v1.Group("/finance-entries"))
+	controllers.NewDiscountController(
+		q.AuthService,
+		q.DiscountService,
+	).Mount(v1.Group("/discounts"))
+	controllers.NewFeeController(
+		q.AuthService,
+		q.FeeService,
+	).Mount(v1.Group("/fees"))
+	controllers.NewPaymentMethodController(
+		q.AuthService,
+		q.PaymentMethodService,
+	).Mount(v1.Group("/payment-methods"))
+	controllers.NewPromotionController(
+		q.AuthService,
+		q.PromotionService,
+	).Mount(v1.Group("/promotions"))
+	controllers.NewCommissionController(
+		q.AuthService,
+		q.CommissionService,
+	).Mount(v1.Group("/commissions"))
 	// handlers that still live in internal/api (being moved to controllers, one group at a time)
 	q.API.Mount(v1)
 	return app

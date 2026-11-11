@@ -141,8 +141,6 @@ func (a *API) registerAll() {
 	a.registerDashboard()
 	a.registerCatalog()
 	a.registerContacts()
-	a.registerPricing()
-	a.registerMarketing()
 	a.registerInventory()
 	a.registerSales()
 	a.registerPurchases()

@@ -21,18 +21,23 @@ import (
 
 // Service is the composition root: everything a controller can ask for.
 type Service struct {
-	Config              config.Config
-	DbRead              *pgxpool.Pool
-	DbWrite             *pgxpool.Pool
-	Migration           *migrations.Migration
-	AuthService         *middlewares.Service
-	TaxService          services.TaxService
-	CategoryService     services.CategoryService
-	CashDrawerService   services.CashDrawerService
-	SupplierService     services.SupplierService
-	CustomerTypeService services.CustomerTypeService
-	CustomerService     services.CustomerService
-	FinanceEntryService services.FinanceEntryService
+	Config               config.Config
+	DbRead               *pgxpool.Pool
+	DbWrite              *pgxpool.Pool
+	Migration            *migrations.Migration
+	AuthService          *middlewares.Service
+	TaxService           services.TaxService
+	CategoryService      services.CategoryService
+	CashDrawerService    services.CashDrawerService
+	SupplierService      services.SupplierService
+	CustomerTypeService  services.CustomerTypeService
+	CustomerService      services.CustomerService
+	FinanceEntryService  services.FinanceEntryService
+	DiscountService      services.DiscountService
+	FeeService           services.FeeService
+	PaymentMethodService services.PaymentMethodService
+	PromotionService     services.PromotionService
+	CommissionService    services.CommissionService
 	// API holds the handlers that have not been moved to controllers yet.
 	API *api.API
 }
@@ -68,6 +73,11 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	customerTypeRepository := repositories.NewCustomerTypeRepository(dbRead, dbWrite)
 	customerRepository := repositories.NewCustomerRepository(dbRead, dbWrite)
 	financeEntryRepository := repositories.NewFinanceEntryRepository(dbRead, dbWrite)
+	discountRepository := repositories.NewDiscountRepository(dbRead, dbWrite)
+	feeRepository := repositories.NewFeeRepository(dbRead, dbWrite)
+	paymentMethodRepository := repositories.NewPaymentMethodRepository(dbRead, dbWrite)
+	promotionRepository := repositories.NewPromotionRepository(dbRead, dbWrite)
+	commissionRepository := repositories.NewCommissionRepository(dbRead, dbWrite)
 	taxService := services.NewTaxService(taxRepository)
 	categoryService := services.NewCategoryService(categoryRepository)
 	cashDrawerService := services.NewCashDrawerService(cashDrawerRepository)
@@ -75,20 +85,30 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	customerTypeService := services.NewCustomerTypeService(customerTypeRepository)
 	customerService := services.NewCustomerService(customerRepository)
 	financeEntryService := services.NewFinanceEntryService(financeEntryRepository)
+	discountService := services.NewDiscountService(discountRepository)
+	feeService := services.NewFeeService(feeRepository)
+	paymentMethodService := services.NewPaymentMethodService(paymentMethodRepository)
+	promotionService := services.NewPromotionService(promotionRepository)
+	commissionService := services.NewCommissionService(commissionRepository)
 	return &Service{
-		Config:              cfg,
-		DbRead:              dbRead,
-		DbWrite:             dbWrite,
-		Migration:           migrations.NewMigration(dbWrite),
-		AuthService:         legacy.Auth,
-		TaxService:          taxService,
-		CategoryService:     categoryService,
-		CashDrawerService:   cashDrawerService,
-		SupplierService:     supplierService,
-		CustomerTypeService: customerTypeService,
-		CustomerService:     customerService,
-		FinanceEntryService: financeEntryService,
-		API:                 legacy,
+		Config:               cfg,
+		DbRead:               dbRead,
+		DbWrite:              dbWrite,
+		Migration:            migrations.NewMigration(dbWrite),
+		AuthService:          legacy.Auth,
+		TaxService:           taxService,
+		CategoryService:      categoryService,
+		CashDrawerService:    cashDrawerService,
+		SupplierService:      supplierService,
+		CustomerTypeService:  customerTypeService,
+		CustomerService:      customerService,
+		FinanceEntryService:  financeEntryService,
+		DiscountService:      discountService,
+		FeeService:           feeService,
+		PaymentMethodService: paymentMethodService,
+		PromotionService:     promotionService,
+		CommissionService:    commissionService,
+		API:                  legacy,
 	}
 }
 

@@ -2,12 +2,14 @@
 package sanitizers
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"uuid"
 
+	"github.com/goccy/go-json"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/utils/v2"
 
@@ -148,6 +150,150 @@ func (b body) id(v *helper.Validation, n nuller, key string) *uuid.UUID {
 		return nil
 	}
 	return &id
+}
+
+// clock reads HH:mm (seconds are dropped).
+func (b body) clock(v *helper.Validation, n nuller, key string) *string {
+	raw := b.value(n, key)
+	if raw == nil {
+		return nil
+	}
+	if s, ok := raw.(string); ok && len(s) >= 5 {
+		if _, err := time.Parse("15:04", s[:5]); err == nil {
+			return new(s[:5])
+		}
+	}
+	v.Add(key, "Use the format HH:mm.")
+	return nil
+}
+
+// list reads a JSON array, or comma-separated text from a spreadsheet; ok is false when the attribute has no
+// value.
+func (b body) list(n nuller, key string) (items []any, ok, valid bool) {
+	switch x := b.value(n, key).(type) {
+	case nil:
+		return nil, false, true
+	case []any:
+		return x, true, true
+	case string:
+		for s := range strings.SplitSeq(x, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				items = append(items, s)
+			}
+		}
+		return items, true, true
+	}
+	return nil, true, false
+}
+
+// texts reads a list of strings; enum limits the allowed values. nil means "not sent".
+func (b body) texts(v *helper.Validation, n nuller, key string, enum ...string) []string {
+	items, ok, valid := b.list(n, key)
+	if !valid {
+		v.Add(key, "Must be a list.")
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+	response := make([]string, 0, len(items))
+	for _, item := range items {
+		s := fmt.Sprint(item)
+		if len(enum) > 0 && !slices.Contains(enum, s) {
+			v.Add(key, "Values must be from: {values}.", "values", strings.Join(enum, ", "))
+			return nil
+		}
+		response = append(response, s)
+	}
+	return response
+}
+
+// idList reads a list of UUIDs. nil means "not sent".
+func (b body) idList(v *helper.Validation, n nuller, key string) []uuid.UUID {
+	items, ok, valid := b.list(n, key)
+	if !valid {
+		v.Add(key, "Must be a list of UUIDs.")
+		return nil
+	}
+	if !ok {
+		return nil
+	}
+	response := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
+		s, _ := item.(string)
+		id, err := uuid.Parse(strings.TrimSpace(s))
+		if err != nil {
+			v.Add(key, "Must be a list of UUIDs.")
+			return nil
+		}
+		response = append(response, id)
+	}
+	return response
+}
+
+// document reads a JSON array or object (also given as JSON text); rows of an array that are entirely empty
+// are dropped, as forms send them for untouched lines. nil means "not sent".
+func (b body) document(v *helper.Validation, n nuller, key string) json.RawMessage {
+	raw, sent := b[key]
+	if !sent {
+		return nil
+	}
+	if s, isText := raw.(string); isText {
+		if strings.TrimSpace(s) == "" {
+			n.SetNull(key)
+			return nil
+		}
+		var x any
+		if err := json.Unmarshal([]byte(s), &x); err != nil {
+			v.Add(key, "Must be valid JSON.")
+			return nil
+		}
+		raw = x
+	}
+	switch x := raw.(type) {
+	case nil:
+		n.SetNull(key)
+		return nil
+	case []any:
+		clean := make([]any, 0, len(x))
+		for _, item := range x {
+			if m, ok := item.(map[string]any); ok && emptyObject(m) {
+				continue
+			}
+			clean = append(clean, item)
+		}
+		raw = clean
+	case map[string]any:
+	default:
+		v.Add(key, "Must be a list or object.")
+		return nil
+	}
+	response, err := json.Marshal(raw)
+	if err != nil {
+		v.Add(key, "Must be valid JSON.")
+		return nil
+	}
+	return response
+}
+
+// emptyObject reports whether every value is null, blank text or false.
+func emptyObject(m map[string]any) bool {
+	for _, value := range m {
+		switch x := value.(type) {
+		case nil:
+		case string:
+			if strings.TrimSpace(x) != "" {
+				return false
+			}
+		case bool:
+			if x {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // required adds "Required" unless the attribute has a value or already has a message.
