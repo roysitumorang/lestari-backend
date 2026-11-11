@@ -69,6 +69,7 @@ type harness struct {
 	t      *testing.T
 	app    *fiber.App
 	a      *api.API
+	routes []string // every "METHOD /path" of the app
 	token  string
 	branch string
 	lang   string // Accept-Language
@@ -187,7 +188,7 @@ func setup(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &harness{t: t, app: app, a: a, token: tok.AccessToken}
+	return &harness{t: t, app: app, a: a, routes: q.Routes(app), token: tok.AccessToken}
 }
 
 // resolveParams fills path parameters using the matching list endpoint.
@@ -236,7 +237,7 @@ func TestIntegrationEveryGET(t *testing.T) {
 	start := time.Now().AddDate(0, 0, -60).Format("2006-01-02")
 	end := time.Now().Format("2006-01-02")
 	q := "start_date=" + start + "&end_date=" + end
-	routes := h.a.Routes()
+	routes := h.routes
 	sort.Strings(routes)
 	tested, skipped := 0, []string{}
 	for _, r := range routes {
@@ -454,7 +455,7 @@ func TestIntegrationTaxes(t *testing.T) {
 		return f
 	}
 	// validation: required, types and range, all reported together
-	bad := h.json("POST", "/taxes", map[string]any{"rate": "x", "is_active": "yes"}, 422)
+	bad := h.json("POST", "/taxes", map[string]any{"rate": "x", "is_active": []any{}}, 422)
 	if f := fields(bad); f["name"] == nil || f["rate"] == nil || f["is_active"] == nil {
 		t.Fatalf("validation fields: %v", bad)
 	}

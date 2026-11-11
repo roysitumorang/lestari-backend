@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,7 @@ type TaxRepository interface {
 	) ([]*models.Tax, int64, error)
 	FindTax(
 		ctx context.Context,
+		tx pgx.Tx,
 		request *models.TaxFilter,
 	) (*models.Tax, error)
 	CreateTax(
@@ -56,14 +58,26 @@ func NewTaxRepository(
 	}
 }
 
-const taxColumns = `id
-	, branch_id
-	, name
-	, rate::float8
-	, is_inclusive
-	, is_active
-	, created_at
-	, updated_at`
+// taxColumns is the SELECT list of taxes (alias t), in the order scanTax reads it.
+const taxColumns = `t.id
+	, t.branch_id
+	, t.name
+	, t.rate::float8
+	, t.is_inclusive
+	, t.is_active
+	, t.created_at
+	, t.updated_at`
+
+// taxSortings maps the sortable fields to their SQL expressions.
+var taxSortings = map[string]string{
+	"id":           "t.id",
+	"created_at":   "t.created_at",
+	"updated_at":   "t.updated_at",
+	"name":         "t.name",
+	"rate":         "t.rate",
+	"is_inclusive": "t.is_inclusive",
+	"is_active":    "t.is_active",
+}
 
 func scanTax(row pgx.Row) (*models.Tax, error) {
 	var response models.Tax
@@ -89,7 +103,7 @@ func (q *taxRepository) FindTaxes(
 	defer pools.BuilderPool.Put(sb)
 	condition, params := q.buildCondition(request, sb)
 	sb.Reset()
-	_, _ = fmt.Fprintf(sb, "SELECT COUNT(1) FROM taxes %s", condition)
+	_, _ = fmt.Fprintf(sb, "SELECT COUNT(1) FROM taxes t %s", condition)
 	var total int64
 	err := q.dbRead.QueryRow(ctx, sb.String(), params...).Scan(&total)
 	if err != nil {
@@ -101,19 +115,17 @@ func (q *taxRepository) FindTaxes(
 		return response, 0, nil
 	}
 	sb.Reset()
-	_, _ = fmt.Fprintf(sb, "SELECT %s FROM taxes %s ORDER BY", taxColumns, condition)
-	sortBy := request.Sortings
-	if len(sortBy) == 0 {
-		sortBy = append(sortBy, models.DefaultTaxSortBy)
+	_, _ = fmt.Fprintf(sb, "SELECT %s FROM taxes t %s ORDER BY ", taxColumns, condition)
+	if len(request.Sortings) == 0 {
+		_, _ = sb.WriteString("t.name")
 	}
-	for i, item := range sortBy {
+	for i, item := range request.Sortings {
 		if i > 0 {
-			_, _ = sb.WriteString(",")
+			_, _ = sb.WriteString(", ")
 		}
-		// the field comes from models.MapTaxSortings (see sanitizers.FindTaxes), never from the request text
-		_, _ = fmt.Fprintf(sb, " %s %s", item.Field, item.Direction)
+		// the expression comes from taxSortings, never from the request text
+		_, _ = fmt.Fprintf(sb, "%s %s NULLS LAST, t.id %s", taxSortings[item.Field], item.Direction, item.Direction)
 	}
-	_, _ = fmt.Fprintf(sb, ", id %s", sortBy[len(sortBy)-1].Direction)
 	if request.Limit > 0 {
 		_, _ = fmt.Fprintf(sb, " LIMIT %d OFFSET %d", request.Limit, max(request.Page-1, 0)*request.Limit)
 	}
@@ -138,8 +150,11 @@ func (q *taxRepository) FindTaxes(
 	return response, total, nil
 }
 
+// FindTax returns the first tax of the filter. Inside a transaction pass tx so the read sees its writes; with a
+// nil tx the read pool is used.
 func (q *taxRepository) FindTax(
 	ctx context.Context,
+	tx pgx.Tx,
 	request *models.TaxFilter,
 ) (*models.Tax, error) {
 	ctxt := "TaxRepository-FindTax"
@@ -147,8 +162,14 @@ func (q *taxRepository) FindTax(
 	defer pools.BuilderPool.Put(sb)
 	condition, params := q.buildCondition(request, sb)
 	sb.Reset()
-	_, _ = fmt.Fprintf(sb, "SELECT %s FROM taxes %s LIMIT 1", taxColumns, condition)
-	response, err := scanTax(q.dbRead.QueryRow(ctx, sb.String(), params...))
+	_, _ = fmt.Fprintf(sb, "SELECT %s FROM taxes t %s LIMIT 1", taxColumns, condition)
+	var row pgx.Row
+	if tx != nil {
+		row = tx.QueryRow(ctx, sb.String(), params...)
+	} else {
+		row = q.dbRead.QueryRow(ctx, sb.String(), params...)
+	}
+	response, err := scanTax(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, models.ErrTaxNotFound
 	}
@@ -177,9 +198,9 @@ func (q *taxRepository) CreateTax(
 		, created_at
 		, updated_at
 	) VALUES ($1, $2, $3, $4, $5, $6, $7)
-	RETURNING `)
-	_, _ = sb.WriteString(taxColumns)
-	response, err := scanTax(tx.QueryRow(
+	RETURNING id`)
+	var id uuid.UUID
+	err := tx.QueryRow(
 		ctx,
 		sb.String(),
 		request.BranchID,
@@ -189,17 +210,18 @@ func (q *taxRepository) CreateTax(
 		request.IsActive,
 		request.CreatedAt,
 		request.UpdatedAt,
-	))
+	).Scan(&id)
 	if err != nil {
-		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
+		if err = writeError(err, models.ErrTaxConflict); !errors.Is(err, models.ErrTaxConflict) && !errors.Is(err, models.ErrReferenceNotFound) {
+			helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
+		}
 		return nil, err
 	}
-	return response, nil
+	return q.FindTax(ctx, tx, models.NewTaxFilter().WithTaxIDs(id))
 }
 
-// UpdateTax locks the row and writes only the attributes whose value differs from the stored one. When
-// nothing changed no UPDATE is executed and the stored row is returned as it is; otherwise updated_at is set
-// to request.UpdatedAt (the caller's time.Now()).
+// UpdateTax locks the row and writes only the attributes whose value differs from the stored one. When nothing
+// changed no UPDATE is executed; otherwise updated_at is set to request.UpdatedAt (the caller's time.Now()).
 func (q *taxRepository) UpdateTax(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -209,21 +231,26 @@ func (q *taxRepository) UpdateTax(
 	sb := pools.BuilderPool.Get()
 	defer pools.BuilderPool.Put(sb)
 	sb.Reset()
-	_, _ = fmt.Fprintf(
-		sb,
-		`SELECT %s
-		FROM taxes
-		WHERE id = $1
-			AND branch_id = $2
-		FOR NO KEY UPDATE`,
-		taxColumns,
-	)
-	response, err := scanTax(tx.QueryRow(
+	_, _ = sb.WriteString(`SELECT t.name
+		, t.rate::float8
+		, t.is_inclusive
+		, t.is_active
+	FROM taxes t
+	WHERE t.id = $1
+		AND t.branch_id = $2
+	FOR NO KEY UPDATE`)
+	var current models.Tax
+	err := tx.QueryRow(
 		ctx,
 		sb.String(),
 		request.ID,
 		request.BranchID,
-	))
+	).Scan(
+		&current.Name,
+		&current.Rate,
+		&current.IsInclusive,
+		&current.IsActive,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, models.ErrTaxNotFound
 	}
@@ -235,50 +262,50 @@ func (q *taxRepository) UpdateTax(
 	var n int
 	sb.Reset()
 	_, _ = sb.WriteString("UPDATE taxes SET")
-	if response.Name != request.Name {
+	if current.Name != request.Name {
 		params = append(params, request.Name)
 		if n = len(params); n > 1 {
 			_, _ = sb.WriteString(",")
 		}
 		_, _ = fmt.Fprintf(sb, " name = $%d", n)
 	}
-	if response.Rate != request.Rate {
+	if current.Rate != request.Rate {
 		params = append(params, request.Rate)
 		if n = len(params); n > 1 {
 			_, _ = sb.WriteString(",")
 		}
 		_, _ = fmt.Fprintf(sb, " rate = $%d", n)
 	}
-	if response.IsInclusive != request.IsInclusive {
+	if current.IsInclusive != request.IsInclusive {
 		params = append(params, request.IsInclusive)
 		if n = len(params); n > 1 {
 			_, _ = sb.WriteString(",")
 		}
 		_, _ = fmt.Fprintf(sb, " is_inclusive = $%d", n)
 	}
-	if response.IsActive != request.IsActive {
+	if current.IsActive != request.IsActive {
 		params = append(params, request.IsActive)
 		if n = len(params); n > 1 {
 			_, _ = sb.WriteString(",")
 		}
 		_, _ = fmt.Fprintf(sb, " is_active = $%d", n)
 	}
-	if len(params) == 0 {
-		return response, nil
+	if len(params) > 0 {
+		params = append(params, request.UpdatedAt)
+		_, _ = fmt.Fprintf(sb, ", updated_at = $%d", len(params))
+		params = append(params, request.ID)
+		_, _ = fmt.Fprintf(sb, " WHERE id = $%d", len(params))
+		if _, err = tx.Exec(ctx, sb.String(), params...); err != nil {
+			if err = writeError(err, models.ErrTaxConflict); !errors.Is(err, models.ErrTaxConflict) && !errors.Is(err, models.ErrReferenceNotFound) {
+				helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrExec")
+			}
+			return nil, err
+		}
 	}
-	params = append(params, request.UpdatedAt)
-	_, _ = fmt.Fprintf(sb, ", updated_at = $%d", len(params))
-	params = append(params, request.ID)
-	_, _ = fmt.Fprintf(sb, " WHERE id = $%d RETURNING %s", len(params), taxColumns)
-	if response, err = scanTax(tx.QueryRow(ctx, sb.String(), params...)); err != nil {
-		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
-		return nil, err
-	}
-	return response, nil
+	return q.FindTax(ctx, tx, models.NewTaxFilter().WithTaxIDs(request.ID))
 }
 
-// DeleteTaxes deletes the taxes matching the filter and returns how many went. Products and sale lines that
-// used a deleted tax keep working without it (their tax_id becomes NULL).
+// DeleteTaxes deletes the taxes of the filter and returns how many went.
 func (q *taxRepository) DeleteTaxes(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -292,8 +319,11 @@ func (q *taxRepository) DeleteTaxes(
 		return 0, errors.New("tax: refusing to delete without a condition")
 	}
 	sb.Reset()
-	_, _ = fmt.Fprintf(sb, "DELETE FROM taxes %s", condition)
+	_, _ = fmt.Fprintf(sb, "DELETE FROM taxes t %s", condition)
 	tag, err := tx.Exec(ctx, sb.String(), params...)
+	if IsForeignKeyViolation(err) {
+		return 0, models.ErrTaxInUse
+	}
 	if err != nil {
 		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrExec")
 		return 0, err
@@ -305,19 +335,20 @@ func (q *taxRepository) buildCondition(request *models.TaxFilter, sb *strings.Bu
 	var conds []string
 	if len(request.TaxIDs) > 0 {
 		params = append(params, request.TaxIDs)
-		conds = append(conds, helper.Sprintf("id = ANY($%d)", len(params)))
+		conds = append(conds, helper.Sprintf("t.id = ANY($%d)", len(params)))
 	}
 	if len(request.BranchIDs) > 0 {
 		params = append(params, request.BranchIDs)
-		conds = append(conds, helper.Sprintf("branch_id = ANY($%d)", len(params)))
+		conds = append(conds, helper.Sprintf("t.branch_id = ANY($%d)", len(params)))
 	}
 	if request.IsActive != nil {
 		params = append(params, *request.IsActive)
-		conds = append(conds, helper.Sprintf("is_active = $%d", len(params)))
+		conds = append(conds, helper.Sprintf("t.is_active = $%d", len(params)))
 	}
 	if request.Keyword != "" {
-		params = append(params, "%"+strings.ToLower(request.Keyword)+"%")
-		conds = append(conds, helper.Sprintf("LOWER(name) LIKE $%d", len(params)))
+		params = append(params, "%"+request.Keyword+"%")
+		n := len(params)
+		conds = append(conds, helper.Sprintf("((t.name)::text ILIKE $%d)", n))
 	}
 	if len(conds) > 0 {
 		sb.Reset()

@@ -36,15 +36,6 @@ func (a *API) registerPricing() {
 		BeforeWrite: percentAtMost100("amount_type", "amount"),
 	}, all...)
 
-	a.CRUD.Register(a.addH, "/cash-drawers", &crud.Resource{
-		Name: "Cash drawers", Singular: "Cash drawer", Table: "cash_drawers", DefaultSort: "t.name",
-		Fields: []crud.Field{
-			{Name: "name", Required: true, Search: true},
-			{Name: "is_active", Kind: crud.Bool, Default: true},
-			{Name: "current_shift_status", Expr: "(CASE WHEN EXISTS(SELECT 1 FROM shifts s WHERE s.cash_drawer_id = t.id AND s.closed_at IS NULL) THEN 'open' ELSE 'closed' END)"},
-		},
-	}, all...)
-
 	a.CRUD.Register(a.addH, "/payment-methods", &crud.Resource{
 		Name: "Payment methods", Singular: "Payment method", Table: "payment_methods", DefaultSort: "t.id",
 		Fields: []crud.Field{

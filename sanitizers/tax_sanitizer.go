@@ -3,7 +3,6 @@ package sanitizers
 import (
 	"log/slog"
 	"strings"
-	"uuid"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -21,54 +20,41 @@ func FindTaxes(c fiber.Ctx) *models.TaxFilter {
 		response.WithIsActive(isActive)
 	}
 	limit, page := paging(c)
+	if sortBy, ok := sorting(c, models.MapTaxSortings); ok {
+		response.WithSortings(sortBy)
+	}
 	return response.
-		WithSortings(sorting(c, models.MapTaxSortings, models.DefaultTaxSortBy)).
 		WithLimit(limit).
 		WithPage(page)
 }
 
-// ValidateTax reads a tax body. With create, name and rate are required; on update only what was sent is checked.
+// ValidateTax reads a tax body. On create name, rate are required; on update only what was sent is checked.
 func ValidateTax(c fiber.Ctx, create bool) (*models.TaxRequest, error) {
 	ctxt := "TaxSanitizer-ValidateTax"
 	b, err := parseBody(c)
 	if err != nil {
-		helper.Log(c.Context(), slog.LevelWarn, err.Error(), ctxt, "ErrParseBody")
+		helper.Log(c.Context(), slog.LevelError, err.Error(), ctxt, "ErrParseBody")
 		return nil, err
 	}
-	v := &helper.Validation{}
-	response := &models.TaxRequest{
-		Name:        b.text(v, "name"),
-		Rate:        b.number(v, "rate"),
-		IsInclusive: b.boolean(v, "is_inclusive"),
-		IsActive:    b.boolean(v, "is_active"),
-	}
-	switch {
-	case response.Name != nil && *response.Name == "":
-		v.Add("name", "Required")
-	case create && response.Name == nil && len(v.Fields["name"]) == 0:
-		v.Add("name", "Required")
-	}
-	if create && response.Rate == nil && len(v.Fields["rate"]) == 0 {
-		v.Add("rate", "Required")
-	}
-	if response.Rate != nil {
-		switch {
-		case *response.Rate < 0:
-			v.Add("rate", "Must be at least {min}.", "min", "0")
-		case *response.Rate > 100:
-			v.Add("rate", "Must be at most {max}.", "max", "100")
-		}
-	}
-	return response, v.Err()
+	return ValidateTaxRow(b, create)
 }
 
-// DeleteTaxes reads {"ids": […]} of POST /taxes/bulk-delete.
-func DeleteTaxes(c fiber.Ctx) ([]uuid.UUID, error) {
-	b, err := parseBody(c)
-	if err != nil {
-		return nil, err
-	}
+// ValidateTaxRow validates one tax given as a decoded object (a request body or an imported row).
+func ValidateTaxRow(row map[string]any, create bool) (*models.TaxRequest, error) {
+	b := body(row)
 	v := &helper.Validation{}
-	ids := b.ids(v, "ids")
-	return ids, v.Err()
+	response := &models.TaxRequest{}
+	response.Name = b.text(v, response, "name")
+	response.Rate = b.number(v, response, "rate", new(float64(0)), new(float64(100)))
+	response.IsInclusive = b.boolean(v, response, "is_inclusive")
+	response.IsActive = b.boolean(v, response, "is_active")
+	required(v, "name", response.Name == nil && (create || response.IsNull("name")))
+	required(v, "rate", response.Rate == nil && (create || response.IsNull("rate")))
+	if response.IsInclusive == nil && (create || response.IsNull("is_inclusive")) {
+		response.IsInclusive = new(false)
+	}
+	if response.IsActive == nil && (create || response.IsNull("is_active")) {
+		response.IsActive = new(true)
+	}
+	return response, v.Err()
 }

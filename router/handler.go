@@ -4,6 +4,7 @@ package router
 import (
 	"context"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -20,12 +21,18 @@ import (
 
 // Service is the composition root: everything a controller can ask for.
 type Service struct {
-	Config      config.Config
-	DbRead      *pgxpool.Pool
-	DbWrite     *pgxpool.Pool
-	Migration   *migrations.Migration
-	AuthService *middlewares.Service
-	TaxService  services.TaxService
+	Config              config.Config
+	DbRead              *pgxpool.Pool
+	DbWrite             *pgxpool.Pool
+	Migration           *migrations.Migration
+	AuthService         *middlewares.Service
+	TaxService          services.TaxService
+	CategoryService     services.CategoryService
+	CashDrawerService   services.CashDrawerService
+	SupplierService     services.SupplierService
+	CustomerTypeService services.CustomerTypeService
+	CustomerService     services.CustomerService
+	FinanceEntryService services.FinanceEntryService
 	// API holds the handlers that have not been moved to controllers yet.
 	API *api.API
 }
@@ -55,15 +62,33 @@ func NewService(cfg config.Config, dbRead, dbWrite *pgxpool.Pool) *Service {
 	repositories.SetDbWrite(dbWrite)
 	legacy := api.New(dbWrite, cfg, helper.NewLogger())
 	taxRepository := repositories.NewTaxRepository(dbRead, dbWrite)
+	categoryRepository := repositories.NewCategoryRepository(dbRead, dbWrite)
+	cashDrawerRepository := repositories.NewCashDrawerRepository(dbRead, dbWrite)
+	supplierRepository := repositories.NewSupplierRepository(dbRead, dbWrite)
+	customerTypeRepository := repositories.NewCustomerTypeRepository(dbRead, dbWrite)
+	customerRepository := repositories.NewCustomerRepository(dbRead, dbWrite)
+	financeEntryRepository := repositories.NewFinanceEntryRepository(dbRead, dbWrite)
 	taxService := services.NewTaxService(taxRepository)
+	categoryService := services.NewCategoryService(categoryRepository)
+	cashDrawerService := services.NewCashDrawerService(cashDrawerRepository)
+	supplierService := services.NewSupplierService(supplierRepository)
+	customerTypeService := services.NewCustomerTypeService(customerTypeRepository)
+	customerService := services.NewCustomerService(customerRepository)
+	financeEntryService := services.NewFinanceEntryService(financeEntryRepository)
 	return &Service{
-		Config:      cfg,
-		DbRead:      dbRead,
-		DbWrite:     dbWrite,
-		Migration:   migrations.NewMigration(dbWrite),
-		AuthService: legacy.Auth,
-		TaxService:  taxService,
-		API:         legacy,
+		Config:              cfg,
+		DbRead:              dbRead,
+		DbWrite:             dbWrite,
+		Migration:           migrations.NewMigration(dbWrite),
+		AuthService:         legacy.Auth,
+		TaxService:          taxService,
+		CategoryService:     categoryService,
+		CashDrawerService:   cashDrawerService,
+		SupplierService:     supplierService,
+		CustomerTypeService: customerTypeService,
+		CustomerService:     customerService,
+		FinanceEntryService: financeEntryService,
+		API:                 legacy,
 	}
 }
 
@@ -77,6 +102,8 @@ func (q *Service) Close() {
 	}
 }
 
+var routeConstraint = regexp.MustCompile(`<[^>]*>`)
+
 // Routes lists "METHOD /path" for every endpoint under the API prefix.
 func (q *Service) Routes(app *fiber.App) []string {
 	var out []string
@@ -85,7 +112,8 @@ func (q *Service) Routes(app *fiber.App) []string {
 			continue
 		}
 		if path, ok := strings.CutPrefix(r.Path, q.Config.APIPrefix); ok && path != "" {
-			out = append(out, r.Method+" "+path)
+			// ":id<guid>" is listed as ":id"
+			out = append(out, r.Method+" "+routeConstraint.ReplaceAllString(path, ""))
 		}
 	}
 	return out

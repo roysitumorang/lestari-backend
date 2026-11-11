@@ -2,7 +2,10 @@
 package sanitizers
 
 import (
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/gofiber/fiber/v3"
@@ -21,45 +24,137 @@ func parseBody(c fiber.Ctx) (body, error) {
 	return body(m), err
 }
 
-// present reports whether the attribute was sent with a value (null counts as absent).
-func (b body) present(key string) bool {
-	return b[key] != nil
-}
+// nuller receives the attributes sent as null or empty (models.Nulls).
+type nuller interface{ SetNull(attribute string) }
 
-func (b body) text(v *helper.Validation, key string) *string {
-	if !b.present(key) {
+// value returns the raw value of key, or nil when it is absent, null or blank text. A key that was sent
+// without a value is recorded as null so an update can clear it.
+func (b body) value(n nuller, key string) any {
+	raw, sent := b[key]
+	if !sent {
 		return nil
 	}
-	s, ok := b[key].(string)
-	if !ok {
+	if s, isText := raw.(string); raw == nil || isText && strings.TrimSpace(s) == "" {
+		n.SetNull(key)
+		return nil
+	}
+	return raw
+}
+
+// text reads a string (numbers and booleans from spreadsheets are accepted); enum limits the allowed values.
+func (b body) text(v *helper.Validation, n nuller, key string, enum ...string) *string {
+	var s string
+	switch x := b.value(n, key).(type) {
+	case nil:
+		return nil
+	case string:
+		s = strings.TrimSpace(x)
+	case float64:
+		s = strconv.FormatFloat(x, 'f', -1, 64)
+	case bool:
+		s = strconv.FormatBool(x)
+	default:
 		v.Add(key, "Must be text.")
 		return nil
 	}
-	return new(strings.TrimSpace(s))
-}
-
-func (b body) number(v *helper.Validation, key string) *float64 {
-	if !b.present(key) {
+	if len(enum) > 0 && !slices.Contains(enum, s) {
+		v.Add(key, "Must be one of: {values}.", "values", strings.Join(enum, ", "))
 		return nil
 	}
-	n, ok := b[key].(float64)
-	if !ok {
+	return &s
+}
+
+// number reads a number (or numeric text such as "1,250.5"); lo and hi are optional bounds.
+func (b body) number(v *helper.Validation, n nuller, key string, lo, hi *float64) *float64 {
+	var f float64
+	switch x := b.value(n, key).(type) {
+	case nil:
+		return nil
+	case float64:
+		f = x
+	case string:
+		var err error
+		if f, err = strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(x), ",", ""), 64); err != nil {
+			v.Add(key, "Must be a number.")
+			return nil
+		}
+	default:
 		v.Add(key, "Must be a number.")
 		return nil
 	}
-	return &n
+	if lo != nil && f < *lo {
+		v.Add(key, "Must be at least {min}.", "min", strconv.FormatFloat(*lo, 'f', -1, 64))
+		return nil
+	}
+	if hi != nil && f > *hi {
+		v.Add(key, "Must be at most {max}.", "max", strconv.FormatFloat(*hi, 'f', -1, 64))
+		return nil
+	}
+	return &f
 }
 
-func (b body) boolean(v *helper.Validation, key string) *bool {
-	if !b.present(key) {
+// integer is number truncated to a whole number.
+func (b body) integer(v *helper.Validation, n nuller, key string, lo, hi *float64) *int64 {
+	f := b.number(v, n, key, lo, hi)
+	if f == nil {
 		return nil
 	}
-	x, ok := b[key].(bool)
-	if !ok {
-		v.Add(key, "Must be true or false.")
+	return new(int64(*f))
+}
+
+// boolean reads true/false (also "yes", "1", "on" … from spreadsheets).
+func (b body) boolean(v *helper.Validation, n nuller, key string) *bool {
+	switch x := b.value(n, key).(type) {
+	case nil:
+		return nil
+	case bool:
+		return &x
+	case string:
+		s := strings.ToLower(strings.TrimSpace(x))
+		return new(s == "true" || s == "1" || s == "yes" || s == "y" || s == "on")
+	case float64:
+		return new(x != 0)
+	}
+	v.Add(key, "Must be true or false.")
+	return nil
+}
+
+// date reads YYYY-MM-DD (a longer timestamp is cut to its date).
+func (b body) date(v *helper.Validation, n nuller, key string) *string {
+	raw := b.value(n, key)
+	if raw == nil {
 		return nil
 	}
-	return &x
+	s, ok := raw.(string)
+	if ok && len(s) >= 10 {
+		if _, err := time.Parse(time.DateOnly, s[:10]); err == nil {
+			return new(s[:10])
+		}
+	}
+	v.Add(key, "Use the format YYYY-MM-DD.")
+	return nil
+}
+
+// id reads a UUID.
+func (b body) id(v *helper.Validation, n nuller, key string) *uuid.UUID {
+	raw := b.value(n, key)
+	if raw == nil {
+		return nil
+	}
+	s, _ := raw.(string)
+	id, err := uuid.Parse(strings.TrimSpace(s))
+	if err != nil {
+		v.Add(key, "Must be a UUID.")
+		return nil
+	}
+	return &id
+}
+
+// required adds "Required" unless the attribute has a value or already has a message.
+func required(v *helper.Validation, key string, missing bool) {
+	if missing && len(v.Fields[key]) == 0 {
+		v.Add(key, "Required")
+	}
 }
 
 // ids reads {"ids": ["uuid", …]}.
@@ -102,17 +197,18 @@ func paging(c fiber.Ctx) (limit, page int64) {
 	return limit, max(page, 1)
 }
 
-// sorting reads ?sort=<field>&order=asc|desc; a field outside allowed falls back to the default.
-func sorting(c fiber.Ctx, allowed map[string]struct{}, fallback models.Sorting) models.Sorting {
+// sorting reads ?sort=<field>&order=asc|desc; ok is false when the field is not in allowed, and the list then
+// keeps its default order.
+func sorting(c fiber.Ctx, allowed map[string]struct{}) (response models.Sorting, ok bool) {
 	field := c.Query("sort")
-	if _, ok := allowed[field]; !ok {
-		return fallback
+	if _, ok = allowed[field]; !ok {
+		return
 	}
 	direction := models.SortingDirectionAsc
 	if models.SortingDirectionDesc.Equal(c.Query("order")) {
 		direction = models.SortingDirectionDesc
 	}
-	return models.Sorting{Field: field, Direction: direction}
+	return models.Sorting{Field: field, Direction: direction}, true
 }
 
 // queryBool reads ?key=true|false|1|0; ok is false when it is absent or something else.
@@ -124,4 +220,30 @@ func queryBool(c fiber.Ctx, key string) (value, ok bool) {
 		return false, true
 	}
 	return false, false
+}
+
+// queryID reads a UUID filter from the query string; anything else is ignored.
+func queryID(c fiber.Ctx, key string) (uuid.UUID, bool) {
+	id, err := uuid.Parse(c.Query(key))
+	return id, err == nil
+}
+
+// queryDate reads a YYYY-MM-DD filter from the query string; anything else is ignored.
+func queryDate(c fiber.Ctx, key string) (string, bool) {
+	s := c.Query(key)
+	if _, err := time.Parse(time.DateOnly, s); err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// BulkDeleteIDs reads {"ids": […]} of the bulk-delete endpoints.
+func BulkDeleteIDs(c fiber.Ctx) ([]uuid.UUID, error) {
+	b, err := parseBody(c)
+	if err != nil {
+		return nil, err
+	}
+	v := &helper.Validation{}
+	ids := b.ids(v, "ids")
+	return ids, v.Err()
 }

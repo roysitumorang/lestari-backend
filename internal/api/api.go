@@ -146,7 +146,6 @@ func (a *API) registerAll() {
 	a.registerInventory()
 	a.registerSales()
 	a.registerPurchases()
-	a.registerFinance()
 	a.registerDebts()
 	a.registerReturns()
 	a.registerReports()

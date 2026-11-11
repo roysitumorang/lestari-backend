@@ -2,22 +2,6 @@ basePath: /api/v1
 consumes:
 - application/json
 definitions:
-  controllers.BulkDeleteRequest:
-    properties:
-      ids:
-        example:
-        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
-        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b
-        items:
-          type: string
-        type: array
-    type: object
-  controllers.DeletedResponse:
-    properties:
-      deleted:
-        example: 3
-        type: integer
-    type: object
   helper.ErrorData:
     properties:
       code:
@@ -99,6 +83,397 @@ definitions:
         example: "2026-11-11T14:22:47.608963985+07:00"
         type: string
     type: object
+  models.BulkDeleteRequest:
+    properties:
+      ids:
+        example:
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        - 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b
+        items:
+          type: string
+        type: array
+    type: object
+  models.CashDrawer:
+    properties:
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      current_shift_status:
+        example: closed
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: Front counter
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.CashDrawerRequest:
+    properties:
+      is_active:
+        example: true
+        type: boolean
+      name:
+        example: Front counter
+        type: string
+    type: object
+  models.Category:
+    properties:
+      color:
+        example: '#0F766E'
+        type: string
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      description:
+        example: Cold and hot drinks
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      name:
+        example: Beverages
+        type: string
+      product_count:
+        example: 12
+        type: integer
+      sort_order:
+        example: 1
+        type: integer
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.CategoryRequest:
+    properties:
+      color:
+        example: '#0F766E'
+        type: string
+      description:
+        example: Cold and hot drinks
+        type: string
+      name:
+        example: Beverages
+        type: string
+      sort_order:
+        example: 1
+        type: integer
+    type: object
+  models.Customer:
+    properties:
+      address:
+        example: Jl. Sudirman No. 5, Medan
+        type: string
+      birth_date:
+        example: "1990-05-17"
+        type: string
+      code:
+        example: CUS-001
+        type: string
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      customer_type:
+        $ref: '#/definitions/models.Reference'
+      customer_type_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      email:
+        example: siti@example.com
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      name:
+        example: Siti Aminah
+        type: string
+      note:
+        example: Prefers WhatsApp
+        type: string
+      phone:
+        example: "+6281234567890"
+        type: string
+      points:
+        example: 120
+        type: integer
+      receivable_balance:
+        example: 75000
+        type: number
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.CustomerRequest:
+    properties:
+      address:
+        example: Jl. Sudirman No. 5, Medan
+        type: string
+      birth_date:
+        example: "1990-05-17"
+        type: string
+      code:
+        example: CUS-001
+        type: string
+      customer_type_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      email:
+        example: siti@example.com
+        type: string
+      name:
+        example: Siti Aminah
+        type: string
+      note:
+        example: Prefers WhatsApp
+        type: string
+      phone:
+        example: "+6281234567890"
+        type: string
+    type: object
+  models.CustomerType:
+    properties:
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      customer_count:
+        example: 40
+        type: integer
+      description:
+        example: Loyal customers
+        type: string
+      discount_type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      discount_value:
+        example: 5
+        type: number
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      name:
+        example: Member
+        type: string
+      point_multiplier:
+        example: 2
+        type: number
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.CustomerTypeRequest:
+    properties:
+      description:
+        example: Loyal customers
+        type: string
+      discount_type:
+        enum:
+        - percent
+        - amount
+        example: percent
+        type: string
+      discount_value:
+        example: 5
+        minimum: 0
+        type: number
+      name:
+        example: Member
+        type: string
+      point_multiplier:
+        example: 2
+        minimum: 0
+        type: number
+    type: object
+  models.DeletedResponse:
+    properties:
+      deleted:
+        example: 3
+        type: integer
+    type: object
+  models.FinanceEntry:
+    properties:
+      amount:
+        example: 1500000
+        type: number
+      attachment_url:
+        example: /uploads/receipt.jpg
+        type: string
+      cash_drawer:
+        $ref: '#/definitions/models.Reference'
+      cash_drawer_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      category:
+        example: Rent
+        type: string
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      description:
+        example: Shop rent for November
+        type: string
+      entry_date:
+        example: "2026-11-08"
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      payment_method:
+        enum:
+        - cash
+        - debit
+        - credit_card
+        - qris
+        - e_wallet
+        - bank_transfer
+        - other
+        example: cash
+        type: string
+      type:
+        enum:
+        - income
+        - expense
+        example: expense
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.FinanceEntryRequest:
+    properties:
+      amount:
+        example: 1500000
+        minimum: 0
+        type: number
+      attachment_url:
+        example: /uploads/receipt.jpg
+        type: string
+      cash_drawer_id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      category:
+        example: Rent
+        type: string
+      description:
+        example: Shop rent for November
+        type: string
+      entry_date:
+        example: "2026-11-08"
+        type: string
+      payment_method:
+        enum:
+        - cash
+        - debit
+        - credit_card
+        - qris
+        - e_wallet
+        - bank_transfer
+        - other
+        example: cash
+        type: string
+      type:
+        enum:
+        - income
+        - expense
+        example: expense
+        type: string
+    type: object
+  models.ImportError:
+    properties:
+      message:
+        example: 'name: Required'
+        type: string
+      row:
+        example: 5
+        type: integer
+    type: object
+  models.ImportResult:
+    properties:
+      created:
+        example: 12
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/models.ImportError'
+        type: array
+      failed:
+        example: 1
+        type: integer
+      updated:
+        example: 3
+        type: integer
+    type: object
+  models.Reference:
+    properties:
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      name:
+        example: Member
+        type: string
+    type: object
+  models.Supplier:
+    properties:
+      address:
+        example: Jl. Merdeka No. 1, Medan
+        type: string
+      code:
+        example: SUP-001
+        type: string
+      contact_person:
+        example: Budi
+        type: string
+      created_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+      email:
+        example: sales@sumbermakmur.co.id
+        type: string
+      id:
+        example: 019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a
+        type: string
+      name:
+        example: PT Sumber Makmur
+        type: string
+      payable_balance:
+        example: 250000
+        type: number
+      phone:
+        example: "+6281234567890"
+        type: string
+      updated_at:
+        example: "2026-11-08T10:32:00+07:00"
+        type: string
+    type: object
+  models.SupplierRequest:
+    properties:
+      address:
+        example: Jl. Merdeka No. 1, Medan
+        type: string
+      code:
+        example: SUP-001
+        type: string
+      contact_person:
+        example: Budi
+        type: string
+      email:
+        example: sales@sumbermakmur.co.id
+        type: string
+      name:
+        example: PT Sumber Makmur
+        type: string
+      phone:
+        example: "+6281234567890"
+        type: string
+    type: object
   models.Tax:
     properties:
       created_at:
@@ -111,7 +486,7 @@ definitions:
         example: true
         type: boolean
       is_inclusive:
-        example: false
+        example: true
         type: boolean
       name:
         example: PPN
@@ -129,7 +504,7 @@ definitions:
         example: true
         type: boolean
       is_inclusive:
-        example: false
+        example: true
         type: boolean
       name:
         example: PPN
@@ -149,6 +524,2141 @@ info:
   title: Lestari API
   version: 0.1.0
 paths:
+  /cash-drawers:
+    get:
+      description: Cash drawers of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - is_active
+        - current_shift_status
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.CashDrawer'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List cash drawers
+      tags:
+      - Cash drawers
+    post:
+      parameters:
+      - description: cash drawer
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CashDrawerRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.CashDrawer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a cash drawer
+      tags:
+      - Cash drawers
+  /cash-drawers/{id}:
+    delete:
+      description: A cash drawer that other records still use cannot be deleted (409).
+      parameters:
+      - description: cash drawer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a cash drawer
+      tags:
+      - Cash drawers
+    get:
+      parameters:
+      - description: cash drawer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.CashDrawer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one cash drawer
+      tags:
+      - Cash drawers
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: cash drawer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CashDrawerRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.CashDrawer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a cash drawer
+      tags:
+      - Cash drawers
+  /categories:
+    get:
+      description: Categories of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - color
+        - sort_order
+        - product_count
+        - description
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.Category'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List categories
+      tags:
+      - Categories
+    post:
+      parameters:
+      - description: category
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CategoryRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Category'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a category
+      tags:
+      - Categories
+  /categories/{id}:
+    delete:
+      description: A category that other records still use cannot be deleted (409).
+      parameters:
+      - description: category id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a category
+      tags:
+      - Categories
+    get:
+      parameters:
+      - description: category id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Category'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one category
+      tags:
+      - Categories
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: category id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CategoryRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Category'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a category
+      tags:
+      - Categories
+  /categories/bulk-delete:
+    post:
+      description: 'All or nothing: an unknown id (404) or a category still in use
+        (409) deletes none.'
+      parameters:
+      - description: ids to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BulkDeleteRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.DeletedResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete several categories
+      tags:
+      - Categories
+  /customer-types:
+    get:
+      description: Customer types of the active branch.
+      parameters:
+      - description: search in name
+        in: query
+        name: q
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - discount_type
+        - discount_value
+        - point_multiplier
+        - customer_count
+        - description
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.CustomerType'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List customer types
+      tags:
+      - Customer types
+    post:
+      parameters:
+      - description: customer type
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CustomerTypeRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.CustomerType'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a customer type
+      tags:
+      - Customer types
+  /customer-types/{id}:
+    delete:
+      description: A customer type that other records still use cannot be deleted
+        (409).
+      parameters:
+      - description: customer type id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a customer type
+      tags:
+      - Customer types
+    get:
+      parameters:
+      - description: customer type id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.CustomerType'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one customer type
+      tags:
+      - Customer types
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: customer type id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CustomerTypeRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.CustomerType'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a customer type
+      tags:
+      - Customer types
+  /customers:
+    get:
+      description: Customers of the active branch.
+      parameters:
+      - description: search in name, phone, email, code
+        in: query
+        name: q
+        type: string
+      - description: only rows with this customer type id
+        in: query
+        name: customer_type_id
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - phone
+        - email
+        - code
+        - customer_type_id
+        - birth_date
+        - points
+        - receivable_balance
+        - address
+        - note
+        - customer_type.name
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.Customer'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List customers
+      tags:
+      - Customers
+    post:
+      parameters:
+      - description: customer
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CustomerRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Customer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a customer
+      tags:
+      - Customers
+  /customers/{id}:
+    delete:
+      description: A customer that other records still use cannot be deleted (409).
+      parameters:
+      - description: customer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a customer
+      tags:
+      - Customers
+    get:
+      parameters:
+      - description: customer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Customer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one customer
+      tags:
+      - Customers
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: customer id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.CustomerRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Customer'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a customer
+      tags:
+      - Customers
+  /customers/bulk-delete:
+    post:
+      description: 'All or nothing: an unknown id (404) or a customer still in use
+        (409) deletes none.'
+      parameters:
+      - description: ids to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BulkDeleteRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.DeletedResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete several customers
+      tags:
+      - Customers
+  /customers/export:
+    get:
+      description: The rows of the list (same filters and sorting, up to 50,000) as
+        a file.
+      parameters:
+      - default: xlsx
+        description: file format
+        enum:
+        - xlsx
+        - csv
+        - pdf
+        in: query
+        name: format
+        type: string
+      - description: search in name, phone, email, code
+        in: query
+        name: q
+        type: string
+      - description: only rows with this customer type id
+        in: query
+        name: customer_type_id
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - phone
+        - email
+        - code
+        - customer_type_id
+        - birth_date
+        - points
+        - receivable_balance
+        - address
+        - note
+        - customer_type.name
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - text/csv
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Export customers
+      tags:
+      - Customers
+  /customers/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload an .xlsx or .csv file that follows the template. mode=create
+        adds every row; mode=update changes the rows matched by code. Each row is
+        saved on its own, so one bad row does not stop the others.
+      parameters:
+      - description: .xlsx or .csv file
+        in: formData
+        name: file
+        required: true
+        type: file
+      - default: create
+        description: create or update
+        enum:
+        - create
+        - update
+        in: formData
+        name: mode
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.ImportResult'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Import customers
+      tags:
+      - Customers
+  /customers/import-template:
+    get:
+      description: An .xlsx file with one column per attribute; a * marks the required
+        ones.
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Download the customer import template
+      tags:
+      - Customers
+  /finance-entries:
+    get:
+      description: Finance entries of the active branch.
+      parameters:
+      - description: search in category, description
+        in: query
+        name: q
+        type: string
+      - description: only rows with this type
+        enum:
+        - income
+        - expense
+        in: query
+        name: type
+        type: string
+      - description: entries on or after this date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        type: string
+      - description: entries on or before this date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        type: string
+      - description: sort field
+        enum:
+        - entry_date
+        - type
+        - category
+        - amount
+        - payment_method
+        - cash_drawer_id
+        - description
+        - attachment_url
+        - cash_drawer.name
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.FinanceEntry'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List finance entries
+      tags:
+      - Cash in & out
+    post:
+      parameters:
+      - description: entry
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.FinanceEntryRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.FinanceEntry'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a entry
+      tags:
+      - Cash in & out
+  /finance-entries/{id}:
+    delete:
+      description: A entry that other records still use cannot be deleted (409).
+      parameters:
+      - description: entry id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a entry
+      tags:
+      - Cash in & out
+    get:
+      parameters:
+      - description: entry id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.FinanceEntry'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one entry
+      tags:
+      - Cash in & out
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: entry id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.FinanceEntryRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.FinanceEntry'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a entry
+      tags:
+      - Cash in & out
+  /finance-entries/export:
+    get:
+      description: The rows of the list (same filters and sorting, up to 50,000) as
+        a file.
+      parameters:
+      - default: xlsx
+        description: file format
+        enum:
+        - xlsx
+        - csv
+        - pdf
+        in: query
+        name: format
+        type: string
+      - description: search in category, description
+        in: query
+        name: q
+        type: string
+      - description: only rows with this type
+        enum:
+        - income
+        - expense
+        in: query
+        name: type
+        type: string
+      - description: entries on or after this date (YYYY-MM-DD)
+        in: query
+        name: start_date
+        type: string
+      - description: entries on or before this date (YYYY-MM-DD)
+        in: query
+        name: end_date
+        type: string
+      - description: sort field
+        enum:
+        - entry_date
+        - type
+        - category
+        - amount
+        - payment_method
+        - cash_drawer_id
+        - description
+        - attachment_url
+        - cash_drawer.name
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - text/csv
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Export finance entries
+      tags:
+      - Cash in & out
+  /suppliers:
+    get:
+      description: Suppliers of the active branch.
+      parameters:
+      - description: search in name, contact_person, phone, email, code
+        in: query
+        name: q
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - contact_person
+        - phone
+        - email
+        - code
+        - payable_balance
+        - address
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - default: 1
+        description: page, from 1
+        in: query
+        name: page
+        type: integer
+      - default: 25
+        description: rows per page
+        in: query
+        maximum: 1000
+        name: per_page
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/helper.Pagination'
+                  - properties:
+                      rows:
+                        items:
+                          $ref: '#/definitions/models.Supplier'
+                        type: array
+                    type: object
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: List suppliers
+      tags:
+      - Suppliers
+    post:
+      parameters:
+      - description: supplier
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.SupplierRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Supplier'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Create a supplier
+      tags:
+      - Suppliers
+  /suppliers/{id}:
+    delete:
+      description: A supplier that other records still use cannot be deleted (409).
+      parameters:
+      - description: supplier id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete a supplier
+      tags:
+      - Suppliers
+    get:
+      parameters:
+      - description: supplier id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Supplier'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Get one supplier
+      tags:
+      - Suppliers
+    put:
+      description: Only the attributes present in the body are changed. When no value
+        differs from the stored one nothing is written and updated_at stays as it
+        was.
+      parameters:
+      - description: supplier id (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: attributes to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.SupplierRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.Supplier'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Update a supplier
+      tags:
+      - Suppliers
+  /suppliers/bulk-delete:
+    post:
+      description: 'All or nothing: an unknown id (404) or a supplier still in use
+        (409) deletes none.'
+      parameters:
+      - description: ids to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.BulkDeleteRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.DeletedResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Delete several suppliers
+      tags:
+      - Suppliers
+  /suppliers/export:
+    get:
+      description: The rows of the list (same filters and sorting, up to 50,000) as
+        a file.
+      parameters:
+      - default: xlsx
+        description: file format
+        enum:
+        - xlsx
+        - csv
+        - pdf
+        in: query
+        name: format
+        type: string
+      - description: search in name, contact_person, phone, email, code
+        in: query
+        name: q
+        type: string
+      - description: sort field
+        enum:
+        - name
+        - contact_person
+        - phone
+        - email
+        - code
+        - payable_balance
+        - address
+        - created_at
+        - updated_at
+        in: query
+        name: sort
+        type: string
+      - default: asc
+        description: sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - text/csv
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Export suppliers
+      tags:
+      - Suppliers
+  /suppliers/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload an .xlsx or .csv file that follows the template. mode=create
+        adds every row; mode=update changes the rows matched by code. Each row is
+        saved on its own, so one bad row does not stop the others.
+      parameters:
+      - description: .xlsx or .csv file
+        in: formData
+        name: file
+        required: true
+        type: file
+      - default: create
+        description: create or update
+        enum:
+        - create
+        - update
+        in: formData
+        name: mode
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/models.ImportResult'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Import suppliers
+      tags:
+      - Suppliers
+  /suppliers/import-template:
+    get:
+      description: An .xlsx file with one column per attribute; a * marks the required
+        ones.
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+      summary: Download the supplier import template
+      tags:
+      - Suppliers
   /taxes:
     get:
       description: Taxes of the active branch.
@@ -157,12 +2667,11 @@ paths:
         in: query
         name: q
         type: string
-      - description: only active / inactive taxes
+      - description: only rows with this is active
         in: query
         name: is_active
         type: boolean
-      - default: name
-        description: sort field
+      - description: sort field
         enum:
         - name
         - rate
@@ -222,8 +2731,6 @@ paths:
       tags:
       - Taxes
     post:
-      description: name and rate (0–100) are required; is_inclusive defaults to false
-        and is_active to true.
       parameters:
       - description: tax
         in: body
@@ -250,6 +2757,15 @@ paths:
                 data:
                   $ref: '#/definitions/helper.ErrorData'
               type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
         "422":
           description: Unprocessable Entity
           schema:
@@ -264,7 +2780,7 @@ paths:
       - Taxes
   /taxes/{id}:
     delete:
-      description: Products that used the tax keep working without it.
+      description: A tax that other records still use cannot be deleted (409).
       parameters:
       - description: tax id (UUID)
         in: path
@@ -285,6 +2801,15 @@ paths:
               type: object
         "404":
           description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
           schema:
             allOf:
             - $ref: '#/definitions/helper.Response'
@@ -377,6 +2902,15 @@ paths:
                 data:
                   $ref: '#/definitions/helper.ErrorData'
               type: object
+        "409":
+          description: Conflict
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
         "422":
           description: Unprocessable Entity
           schema:
@@ -391,14 +2925,15 @@ paths:
       - Taxes
   /taxes/bulk-delete:
     post:
-      description: 'All or nothing: an unknown id (404) deletes none.'
+      description: 'All or nothing: an unknown id (404) or a tax still in use (409)
+        deletes none.'
       parameters:
       - description: ids to delete
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/controllers.BulkDeleteRequest'
+          $ref: '#/definitions/models.BulkDeleteRequest'
       responses:
         "200":
           description: OK
@@ -407,7 +2942,7 @@ paths:
             - $ref: '#/definitions/helper.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/controllers.DeletedResponse'
+                  $ref: '#/definitions/models.DeletedResponse'
               type: object
         "401":
           description: Unauthorized
@@ -420,6 +2955,15 @@ paths:
               type: object
         "404":
           description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/helper.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/helper.ErrorData'
+              type: object
+        "409":
+          description: Conflict
           schema:
             allOf:
             - $ref: '#/definitions/helper.Response'

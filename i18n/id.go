@@ -4,6 +4,8 @@ package i18n
 // appear in both (TestPlaceholdersMatch); every message in the API needs an entry (TestDictionaryCoverage).
 // Terminology follows lestari-client js/i18n/id.js.
 var id = map[string]string{ //nolint:gosec // G101: a translation table, the word "password" is not a credential
+	"No {item} with {key} {value}":                                     "Tidak ada {item} dengan {key} {value}",
+	"{key} is required to update":                                      "{key} wajib diisi untuk memperbarui",
 	"A credit purchase needs a supplier.":                              "Pembelian kredit memerlukan supplier.",
 	"A credit sale needs a customer.":                                  "Penjualan kredit memerlukan pelanggan.",
 	"A percentage cannot be more than 100.":                            "Persentase tidak boleh lebih dari 100.",

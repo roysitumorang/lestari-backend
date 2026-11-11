@@ -24,55 +24,11 @@ func (a *API) businessOnly() func(method, path string, h fiber.Handler) {
 }
 
 func (a *API) registerContacts() {
-	customers := &crud.Resource{
-		Name: "Customers", Singular: "Customer", Table: "customers", ImportKey: "code", DefaultSort: "t.name",
-		Fields: []crud.Field{
-			{Name: "name", Required: true, Search: true},
-			{Name: "phone", Search: true},
-			{Name: "email", Search: true},
-			{Name: "code", Search: true},
-			{Name: "customer_type_id", Kind: crud.UUID, Filter: true, Ref: &crud.Ref{Key: "customer_type", Table: "customer_types"}},
-			{Name: "birth_date", Kind: crud.Date},
-			{Name: "points", Kind: crud.Int, ReadOnly: true},
-			{Name: "receivable_balance", Kind: crud.Num, Expr: "(SELECT COALESCE(sum(d.total_amount - d.paid_amount), 0) FROM debts d WHERE d.customer_id = t.id AND d.kind = 'receivable' AND d.status <> 'paid')"},
-			{Name: "address"},
-			{Name: "note"},
-		},
-	}
-	a.CRUD.Register(a.addH, "/customers", customers, "list", "create", "read", "update", "delete", "bulk_delete", "import", "export")
 	a.addH("POST", "/customers/:id/points", a.adjustPoints)
 	a.addH("GET", "/customers/:id/point-history", a.pointHistory)
 	a.addH("GET", "/customers/qr-codes", a.customerQRCodes)
 	a.addH("POST", "/customers/points/import", a.importPoints)
 
-	customerTypes := &crud.Resource{
-		Name: "Customer types", Singular: "Customer type", Table: "customer_types", DefaultSort: "t.name",
-		Fields: []crud.Field{
-			{Name: "name", Required: true, Search: true},
-			{Name: "discount_type", Enum: en("percent", "amount")},
-			{Name: "discount_value", Kind: crud.Num, Min: new(float64(0))},
-			{Name: "point_multiplier", Kind: crud.Num, Min: new(float64(0)), Default: 1.0},
-			{Name: "customer_count", Kind: crud.Int, Expr: "(SELECT count(*) FROM customers c WHERE c.customer_type_id = t.id)"},
-			{Name: "description"},
-		},
-	}
-	// listing stays open so lookups work everywhere; changes need the business plugin
-	a.CRUD.Register(a.addH, "/customer-types", customerTypes, "list", "read")
-	a.CRUD.Register(a.businessOnly(), "/customer-types", customerTypes, "create", "update", "delete")
-
-	suppliers := &crud.Resource{
-		Name: "Suppliers", Singular: "Supplier", Table: "suppliers", ImportKey: "code", DefaultSort: "t.name",
-		Fields: []crud.Field{
-			{Name: "name", Required: true, Search: true},
-			{Name: "contact_person", Search: true},
-			{Name: "phone", Search: true},
-			{Name: "email", Search: true},
-			{Name: "code", Search: true},
-			{Name: "payable_balance", Kind: crud.Num, Expr: "(SELECT COALESCE(sum(d.total_amount - d.paid_amount), 0) FROM debts d WHERE d.supplier_id = t.id AND d.kind = 'payable' AND d.status <> 'paid')"},
-			{Name: "address"},
-		},
-	}
-	a.CRUD.Register(a.addH, "/suppliers", suppliers, "list", "create", "read", "update", "delete", "bulk_delete", "import", "export")
 }
 
 // changePoints updates a customer's balance and ledger inside tx.

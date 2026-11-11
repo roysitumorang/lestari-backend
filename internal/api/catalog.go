@@ -151,17 +151,6 @@ func (a *API) registerCatalog() {
 		return export.Send(c, "labels.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b)
 	})
 
-	categories := &crud.Resource{
-		Name: "Categories", Singular: "Category", Table: "categories", DefaultSort: "t.sort_order NULLS LAST, t.name",
-		Fields: []crud.Field{
-			{Name: "name", Required: true, Search: true},
-			{Name: "color"},
-			{Name: "sort_order", Kind: crud.Int},
-			{Name: "product_count", Kind: crud.Int, Expr: "(SELECT count(*) FROM products p WHERE p.category_id = t.id AND p.deleted_at IS NULL)"},
-			{Name: "description"},
-		},
-	}
-	a.CRUD.Register(a.addH, "/categories", categories, "list", "create", "read", "update", "delete", "bulk_delete")
 }
 
 // selectedProducts returns products filtered by ?product_ids[]= (all when empty).

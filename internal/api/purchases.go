@@ -304,25 +304,6 @@ func (a *API) purchaseReturn(c fiber.Ctx) error {
 
 func trimNum(f float64) string { return fmt.Sprintf("%g", f) }
 
-// ---------- cash in / out ----------
-
-func (a *API) registerFinance() {
-	a.CRUD.Register(a.addH, "/finance-entries", &crud.Resource{
-		Name: "Finance entries", Singular: "Entry", Table: "finance_entries", DefaultSort: "t.entry_date DESC, t.id DESC",
-		Fields: []crud.Field{
-			{Name: "entry_date", Kind: crud.Date, Required: true},
-			{Name: "type", Required: true, Enum: en("income", "expense"), Filter: true},
-			{Name: "category", Required: true, Search: true},
-			{Name: "amount", Kind: crud.Num, Required: true, Min: new(float64(0))},
-			{Name: "payment_method", Enum: salesPaymentTypes},
-			{Name: "cash_drawer_id", Kind: crud.UUID, Ref: &crud.Ref{Key: "cash_drawer", Table: "cash_drawers"}},
-			{Name: "description", Search: true},
-			{Name: "attachment_url"},
-		},
-		Filters: []crud.Filter{dateFrom("t.entry_date"), dateTo("t.entry_date")},
-	}, "list", "create", "read", "update", "delete", "export")
-}
-
 // ---------- debts ----------
 
 func (a *API) debtResource(kind string) *crud.Resource {

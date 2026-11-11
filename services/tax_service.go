@@ -1,5 +1,3 @@
-// Package services holds the business rules; each service works through repositories and is given the
-// transaction by its caller.
 package services
 
 import (
@@ -21,6 +19,7 @@ type TaxService interface {
 	) ([]*models.Tax, int64, error)
 	FindTax(
 		ctx context.Context,
+		tx pgx.Tx,
 		request *models.TaxFilter,
 	) (*models.Tax, error)
 	CreateTax(
@@ -66,10 +65,11 @@ func (q *taxService) FindTaxes(
 
 func (q *taxService) FindTax(
 	ctx context.Context,
+	tx pgx.Tx,
 	request *models.TaxFilter,
 ) (*models.Tax, error) {
 	ctxt := "TaxService-FindTax"
-	response, err := q.taxRepository.FindTax(ctx, request)
+	response, err := q.taxRepository.FindTax(ctx, tx, request)
 	if err != nil && !errors.Is(err, models.ErrTaxNotFound) {
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrFindTax")
 	}
@@ -96,7 +96,7 @@ func (q *taxService) UpdateTax(
 ) (*models.Tax, error) {
 	ctxt := "TaxService-UpdateTax"
 	response, err := q.taxRepository.UpdateTax(ctx, tx, request)
-	if err != nil && !errors.Is(err, models.ErrTaxNotFound) {
+	if err != nil {
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrUpdateTax")
 	}
 	return response, err

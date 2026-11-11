@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/i18n"
 	"github.com/roysitumorang/lestari-backend/middlewares"
 	"github.com/roysitumorang/lestari-backend/models"
 	"github.com/roysitumorang/lestari-backend/repositories"
@@ -30,22 +31,28 @@ func NewTaxController(
 	}
 }
 
+// Mount registers the routes. The id routes only match UUIDs, so other paths under /taxes fall through.
 func (q *taxController) Mount(r fiber.Router) {
-	r.Group("", q.authService.Middleware()).
-		Get("", q.V1Index).
-		Post("", q.V1Create).
-		Post("/bulk-delete", q.V1BulkDelete).
-		Get("/:id", q.V1Show).
-		Put("/:id", q.V1Update).
-		Delete("/:id", q.V1Delete)
+	private := r.Group("", q.authService.Middleware())
+	private.Get("", q.V1Index)
+	private.Post("", q.V1Create)
+	private.Post("/bulk-delete", q.V1BulkDelete)
+	private.Get("/:id<guid>", q.V1Show)
+	private.Put("/:id<guid>", q.V1Update)
+	private.Delete("/:id<guid>", q.V1Delete)
 }
 
 // taxError turns the tax errors into responses; anything else goes to the error handler as it is.
 func taxError(err error) error {
-	if errors.Is(err, models.ErrTaxNotFound) {
+	switch {
+	case errors.Is(err, models.ErrTaxNotFound):
 		return helper.NotFound("Tax")
+	case errors.Is(err, models.ErrTaxConflict):
+		return helper.Conflict("A {item} with the same code or name already exists.", "item", i18n.Tr("Tax"))
+	case errors.Is(err, models.ErrTaxInUse):
+		return helper.Conflict("This {item} is still used by other records.", "item", i18n.Tr("Tax"))
 	}
-	return err
+	return writeError(err)
 }
 
 // V1Index godoc
@@ -54,9 +61,9 @@ func taxError(err error) error {
 //	@Description	Taxes of the active branch.
 //	@Tags			Taxes
 //	@Param			q			query		string	false	"search in name"
-//	@Param			is_active	query		bool	false	"only active / inactive taxes"
-//	@Param			sort		query		string	false	"sort field"		Enums(name, rate, is_inclusive, is_active, created_at, updated_at)	default(name)
-//	@Param			order		query		string	false	"sort direction"	Enums(asc, desc)													default(asc)
+//	@Param			is_active	query		bool	false	"only rows with this is active"
+//	@Param			sort		query		string	false	"sort field"		Enums(name, rate, is_inclusive, is_active, created_at, updated_at)
+//	@Param			order		query		string	false	"sort direction"	Enums(asc, desc)	default(asc)
 //	@Param			page		query		int		false	"page, from 1"		default(1)
 //	@Param			per_page	query		int		false	"rows per page"		default(25)	maximum(1000)
 //	@Success		200			{object}	helper.Response{data=helper.Pagination{rows=[]models.Tax}}
@@ -94,6 +101,7 @@ func (q *taxController) V1Show(c fiber.Ctx) error {
 	}
 	response, err := q.taxService.FindTax(
 		ctx,
+		nil,
 		models.NewTaxFilter().
 			WithBranchIDs(currentBranchID(c)).
 			WithTaxIDs(taxID),
@@ -107,14 +115,14 @@ func (q *taxController) V1Show(c fiber.Ctx) error {
 
 // V1Create godoc
 //
-//	@Summary		Create a tax
-//	@Description	name and rate (0–100) are required; is_inclusive defaults to false and is_active to true.
-//	@Tags			Taxes
-//	@Param			request	body		models.TaxRequest	true	"tax"
-//	@Success		201		{object}	helper.Response{data=models.Tax}
-//	@Failure		401		{object}	helper.Response{data=helper.ErrorData}
-//	@Failure		422		{object}	helper.Response{data=helper.ErrorData}
-//	@Router			/taxes [post]
+//	@Summary	Create a tax
+//	@Tags		Taxes
+//	@Param		request	body		models.TaxRequest	true	"tax"
+//	@Success	201		{object}	helper.Response{data=models.Tax}
+//	@Failure	401		{object}	helper.Response{data=helper.ErrorData}
+//	@Failure	409		{object}	helper.Response{data=helper.ErrorData}
+//	@Failure	422		{object}	helper.Response{data=helper.ErrorData}
+//	@Router		/taxes [post]
 func (q *taxController) V1Create(c fiber.Ctx) error {
 	ctx := c.Context()
 	ctxt := "TaxController-V1Create"
@@ -126,7 +134,6 @@ func (q *taxController) V1Create(c fiber.Ctx) error {
 	now := time.Now()
 	tax := request.Apply(&models.Tax{
 		BranchID:  currentBranchID(c),
-		IsActive:  true,
 		CreatedAt: now,
 		UpdatedAt: now,
 	})
@@ -139,7 +146,7 @@ func (q *taxController) V1Create(c fiber.Ctx) error {
 	response, err := q.taxService.CreateTax(ctx, tx, tax)
 	if err != nil {
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrCreateTax")
-		return err
+		return taxError(err)
 	}
 	if err = tx.Commit(ctx); err != nil {
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrCommit")
@@ -158,6 +165,7 @@ func (q *taxController) V1Create(c fiber.Ctx) error {
 //	@Success		200		{object}	helper.Response{data=models.Tax}
 //	@Failure		401		{object}	helper.Response{data=helper.ErrorData}
 //	@Failure		404		{object}	helper.Response{data=helper.ErrorData}
+//	@Failure		409		{object}	helper.Response{data=helper.ErrorData}
 //	@Failure		422		{object}	helper.Response{data=helper.ErrorData}
 //	@Router			/taxes/{id} [put]
 func (q *taxController) V1Update(c fiber.Ctx) error {
@@ -175,6 +183,7 @@ func (q *taxController) V1Update(c fiber.Ctx) error {
 	}
 	tax, err := q.taxService.FindTax(
 		ctx,
+		nil,
 		models.NewTaxFilter().
 			WithBranchIDs(currentBranchID(c)).
 			WithTaxIDs(taxID),
@@ -205,12 +214,13 @@ func (q *taxController) V1Update(c fiber.Ctx) error {
 // V1Delete godoc
 //
 //	@Summary		Delete a tax
-//	@Description	Products that used the tax keep working without it.
+//	@Description	A tax that other records still use cannot be deleted (409).
 //	@Tags			Taxes
 //	@Param			id	path	string	true	"tax id (UUID)"
 //	@Success		204
 //	@Failure		401	{object}	helper.Response{data=helper.ErrorData}
 //	@Failure		404	{object}	helper.Response{data=helper.ErrorData}
+//	@Failure		409	{object}	helper.Response{data=helper.ErrorData}
 //	@Router			/taxes/{id} [delete]
 func (q *taxController) V1Delete(c fiber.Ctx) error {
 	ctx := c.Context()
@@ -243,28 +253,24 @@ func (q *taxController) V1Delete(c fiber.Ctx) error {
 	return helper.NoContent(c)
 }
 
-// BulkDeleteRequest is the body of the bulk-delete endpoints.
-type BulkDeleteRequest struct {
-	IDs []string `json:"ids" example:"019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a,019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6b"`
-}
-
 // V1BulkDelete godoc
 //
 //	@Summary		Delete several taxes
-//	@Description	All or nothing: an unknown id (404) deletes none.
+//	@Description	All or nothing: an unknown id (404) or a tax still in use (409) deletes none.
 //	@Tags			Taxes
-//	@Param			request	body		BulkDeleteRequest	true	"ids to delete"
-//	@Success		200		{object}	helper.Response{data=DeletedResponse}
+//	@Param			request	body		models.BulkDeleteRequest	true	"ids to delete"
+//	@Success		200		{object}	helper.Response{data=models.DeletedResponse}
 //	@Failure		401		{object}	helper.Response{data=helper.ErrorData}
 //	@Failure		404		{object}	helper.Response{data=helper.ErrorData}
+//	@Failure		409		{object}	helper.Response{data=helper.ErrorData}
 //	@Failure		422		{object}	helper.Response{data=helper.ErrorData}
 //	@Router			/taxes/bulk-delete [post]
 func (q *taxController) V1BulkDelete(c fiber.Ctx) error {
 	ctx := c.Context()
 	ctxt := "TaxController-V1BulkDelete"
-	taxIDs, err := sanitizers.DeleteTaxes(c)
+	taxIDs, err := sanitizers.BulkDeleteIDs(c)
 	if err != nil {
-		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrDeleteTaxes")
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrBulkDeleteIDs")
 		return err
 	}
 	tx, err := repositories.BeginTx(ctx)
@@ -287,5 +293,5 @@ func (q *taxController) V1BulkDelete(c fiber.Ctx) error {
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrCommit")
 		return err
 	}
-	return helper.OK(c, DeletedResponse{Deleted: len(taxIDs)})
+	return helper.OK(c, models.DeletedResponse{Deleted: len(taxIDs)})
 }

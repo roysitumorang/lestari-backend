@@ -6,46 +6,44 @@ import (
 	"uuid"
 )
 
-const (
-	TaxSortingFieldName        = "name"
-	TaxSortingFieldRate        = "rate"
-	TaxSortingFieldIsInclusive = "is_inclusive"
-	TaxSortingFieldIsActive    = "is_active"
-)
-
 var (
 	ErrTaxNotFound = errors.New("tax not found")
+	// ErrTaxConflict is a unique-constraint violation: another tax has the same code or name.
+	ErrTaxConflict = errors.New("tax with the same code or name already exists")
+	// ErrTaxInUse is returned when other records still reference the tax.
+	ErrTaxInUse = errors.New("tax is still used by other records")
 
-	// MapTaxSortings lists the columns a client may sort by.
+	// MapTaxSortings lists the fields a client may sort by (?sort=).
 	MapTaxSortings = map[string]struct{}{
-		SortingFieldID:             {},
-		SortingFieldCreatedAt:      {},
-		SortingFieldUpdatedAt:      {},
-		TaxSortingFieldName:        {},
-		TaxSortingFieldRate:        {},
-		TaxSortingFieldIsInclusive: {},
-		TaxSortingFieldIsActive:    {},
+		"id":           {},
+		"created_at":   {},
+		"updated_at":   {},
+		"name":         {},
+		"rate":         {},
+		"is_inclusive": {},
+		"is_active":    {},
 	}
-	DefaultTaxSortBy = Sorting{Field: TaxSortingFieldName, Direction: SortingDirectionAsc}
 )
 
-// Tax is a sales tax of a branch.
+// Tax is one row of taxes.
 type Tax struct {
 	ID          uuid.UUID `json:"id" example:"019a5f3c-8b2e-7d41-9c3a-5e8f1b2c4d6a"`
 	BranchID    uuid.UUID `json:"-"`
 	Name        string    `json:"name" example:"PPN"`
 	Rate        float64   `json:"rate" example:"11"`
-	IsInclusive bool      `json:"is_inclusive" example:"false"`
+	IsInclusive bool      `json:"is_inclusive" example:"true"`
 	IsActive    bool      `json:"is_active" example:"true"`
 	CreatedAt   time.Time `json:"created_at" example:"2026-11-08T10:32:00+07:00"`
 	UpdatedAt   time.Time `json:"updated_at" example:"2026-11-08T10:32:00+07:00"`
 }
 
-// TaxRequest is the body of POST /taxes and PUT /taxes/{id}. On update only the attributes present are changed.
+// TaxRequest is the body of POST /taxes and PUT /taxes/{id}. On update only the attributes present are changed;
+// an attribute sent as null clears an optional value.
 type TaxRequest struct {
+	Nulls       `json:"-"`
 	Name        *string  `json:"name" example:"PPN"`
 	Rate        *float64 `json:"rate" example:"11" minimum:"0" maximum:"100"`
-	IsInclusive *bool    `json:"is_inclusive" example:"false"`
+	IsInclusive *bool    `json:"is_inclusive" example:"true"`
 	IsActive    *bool    `json:"is_active" example:"true"`
 }
 

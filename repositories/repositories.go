@@ -5,8 +5,10 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
+	"uuid"
 
 	"github.com/goccy/go-json"
 	"github.com/jackc/pgx/v5"
@@ -14,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/models"
+	"github.com/roysitumorang/lestari-backend/pools"
 )
 
 // Querier is satisfied by *pgxpool.Pool and pgx.Tx.
@@ -99,3 +103,38 @@ func IsInvalidText(err error) bool {
 
 // IsNoRows reports pgx.ErrNoRows.
 func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
+
+// equalPtr reports whether two optional values are the same (both NULL, or both set and equal).
+func equalPtr[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// writeError maps constraint violations of an INSERT/UPDATE to the errors services understand.
+func writeError(err, conflict error) error {
+	switch {
+	case IsUniqueViolation(err):
+		return conflict
+	case IsForeignKeyViolation(err):
+		return models.ErrReferenceNotFound
+	}
+	return err
+}
+
+// ReferenceExists reports whether table has a row id inside the tenant (scopeColumn = scopeID). table and
+// scopeColumn are names from the code, never request text.
+func ReferenceExists(ctx context.Context, tx pgx.Tx, table, scopeColumn string, id, scopeID uuid.UUID) (bool, error) {
+	ctxt := "Repositories-ReferenceExists"
+	sb := pools.BuilderPool.Get()
+	defer pools.BuilderPool.Put(sb)
+	sb.Reset()
+	_, _ = fmt.Fprintf(sb, "SELECT EXISTS(SELECT 1 FROM %s WHERE id = $1 AND %s = $2)", table, scopeColumn)
+	var exists bool
+	if err := tx.QueryRow(ctx, sb.String(), id, scopeID).Scan(&exists); err != nil {
+		helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrScan")
+		return false, err
+	}
+	return exists, nil
+}
