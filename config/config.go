@@ -56,13 +56,13 @@ func Load() Config {
 	return c
 }
 
-// list splits a comma-separated value, dropping blanks.
-// addr is ":<PORT>" (laukpauk style), or APP_ADDR, or ":8080".
+// addr is the listen address from APP_ADDR: ":8080" (the default), "127.0.0.1:8080", or just the port "8080".
 func addr() string {
-	if p := os.Getenv("PORT"); p != "" {
-		return ":" + p
+	value := strings.TrimSpace(env("APP_ADDR", ":8080"))
+	if !strings.Contains(value, ":") {
+		return ":" + value
 	}
-	return env("APP_ADDR", ":8080")
+	return value
 }
 
 func sentryDSN() string {
@@ -72,6 +72,7 @@ func sentryDSN() string {
 	return os.Getenv("SENTRY_DSN")
 }
 
+// list splits a comma-separated value, dropping blanks.
 func list(v string) []string {
 	var out []string
 	for s := range strings.SplitSeq(v, ",") {

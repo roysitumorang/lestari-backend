@@ -1,7 +1,8 @@
 PROJECTNAME=lestari
 GOBASE=$(shell pwd)
 MODULE=github.com/roysitumorang/lestari-backend
-PORT_HTTP=`cat .env 2>/dev/null | grep ^PORT= | sed -e 's/^PORT=//'`
+# the port of APP_ADDR in .env (":8080", "127.0.0.1:8080" or "8080"); 8080 when it is not set
+PORT_HTTP=$(shell p=`grep -s '^APP_ADDR=' .env | tail -n 1 | sed -e 's/^APP_ADDR=//' -e 's/["'"'"' ]//g' -e 's/^.*://'`; echo $${p:-8080})
 LDFLAGS=-X $(MODULE)/config.AppName=$(PROJECTNAME) \
 	-X $(MODULE)/config.Commit=$(shell git rev-list -1 HEAD) \
 	-X $(MODULE)/config.Build=$(shell date +%FT%T%:z)

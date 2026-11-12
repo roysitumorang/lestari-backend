@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/roysitumorang
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/lestari /app/lestari
-ENV ENV=production PORT=8080 UPLOAD_DIR=/app/storage/uploads
+ENV ENV=production APP_ADDR=:8080 UPLOAD_DIR=/app/storage/uploads
 EXPOSE 8080
 VOLUME ["/app/storage"]
 ENTRYPOINT ["/app/lestari"]

@@ -46,7 +46,7 @@ lestari routes    # list every endpoint
 | `DB_WRITE_URL` (or `DATABASE_URL`) | `postgres://postgres:postgres@localhost:5432/lestari?sslmode=disable` | |
 | `JWT_SECRET` | `change-me-in-production` | **required** in production (server refuses to start otherwise); also signs payment webhooks |
 | `ENV` (or `APP_ENV`) | `development` | `production` hides stack traces and the access log |
-| `PORT` (or `APP_ADDR`) | `8080` | |
+| `APP_ADDR` | `:8080` | listen address: `:8080`, `127.0.0.1:8080` or just `8080`; `make run` / `stop` / `profile` read its port |
 | `DB_READ_URL` | same as write | optional read replica |
 | `DB_MAX_CONNECTIONS` | pgx default | per pool |
 | `LOG_LEVEL` | `info` | `error` logs only errors (JSON on stdout) |
