@@ -69,9 +69,6 @@ func NotFound(what string) *Error {
 	return NewError(404, "not_found", "{what} not found", "what", i18n.Tr(what))
 }
 func Conflict(msg string, args ...any) *Error { return NewError(409, "conflict", msg, args...) }
-func NotImplemented(msg string, args ...any) *Error {
-	return NewError(501, "not_implemented", msg, args...)
-}
 
 // Validation collects field errors; call Err() to get nil when there are none.
 type Validation struct{ Fields map[string][]i18n.Text }
@@ -332,28 +329,6 @@ type Page struct {
 	Offset  int
 }
 
-func Paging(c fiber.Ctx, def int) Page {
-	p := Page{Page: atoi(c.Query("page"), 1), PerPage: atoi(c.Query("per_page"), def)}
-	if p.Page < 1 {
-		p.Page = 1
-	}
-	if p.PerPage < 1 {
-		p.PerPage = def
-	}
-	if p.PerPage > 1000 {
-		p.PerPage = 1000
-	}
-	p.Offset = (p.Page - 1) * p.PerPage
-	return p
-}
-
-func atoi(s string, def int) int {
-	if n, err := strconv.Atoi(s); err == nil {
-		return n
-	}
-	return def
-}
-
 // Body decodes the JSON body into a map (empty map for an empty body).
 func Body(c fiber.Ctx) (map[string]any, error) {
 	b := c.Body()
@@ -384,30 +359,11 @@ var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 // IsUUID reports whether s is a canonical UUID string.
 func IsUUID(s string) bool { return uuidRe.MatchString(s) }
 
-// ParamID reads a UUID path parameter (lower-cased); anything else is a 404.
-func ParamID(c fiber.Ctx, name string) (string, error) {
-	v := strings.ToLower(c.Params(name))
-	if !IsUUID(v) {
-		return "", NotFound("Resource")
-	}
-	return v, nil
-}
-
 // UUID reads a UUID attribute from a decoded body.
 func UUID(m map[string]any, k string) (string, bool) {
 	s, ok := m[k].(string)
 	s = strings.ToLower(strings.TrimSpace(s))
 	return s, ok && IsUUID(s)
-}
-
-// QueryUUID returns a UUID query parameter, or nil when it is missing or malformed
-// (so SQL can use "$n::uuid IS NULL OR col = $n").
-func QueryUUID(c fiber.Ctx, k string) any {
-	v := strings.ToLower(strings.TrimSpace(c.Query(k)))
-	if IsUUID(v) {
-		return v
-	}
-	return nil
 }
 
 // QueryArray returns ?k[]=a&k[]=b (or ?k=a,b) values.

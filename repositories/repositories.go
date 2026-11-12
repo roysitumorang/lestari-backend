@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"strings"
 	"uuid"
 
 	"github.com/goccy/go-json"
@@ -45,45 +44,6 @@ func BeginTx(ctx context.Context) (pgx.Tx, error) {
 	return tx, err
 }
 
-// JSONRows runs a query wrapped as json_agg and returns the rows as []map[string]any.
-// The query must be a plain SELECT; column aliases become the JSON keys.
-func JSONRows(ctx context.Context, q Querier, sql string, args ...any) ([]map[string]any, error) {
-	raw, err := JSONRaw(ctx, q, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	var out []map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-	if out == nil {
-		out = []map[string]any{}
-	}
-	return out, nil
-}
-
-// JSONRaw returns the rows of a SELECT as a raw JSON array.
-func JSONRaw(ctx context.Context, q Querier, sql string, args ...any) (json.RawMessage, error) {
-	var raw []byte
-	wrapped := `SELECT COALESCE(json_agg(row_to_json(_q)), '[]'::json) FROM (` + sql + `) _q`
-	head := strings.ToUpper(strings.TrimSpace(sql))
-	if strings.HasPrefix(head, "INSERT") || strings.HasPrefix(head, "UPDATE") || strings.HasPrefix(head, "DELETE") {
-		// data-modifying statements are only allowed in a WITH clause
-		wrapped = `WITH _q AS (` + sql + `) SELECT COALESCE(json_agg(row_to_json(_q)), '[]'::json) FROM _q`
-	}
-	err := q.QueryRow(ctx, wrapped, args...).Scan(&raw)
-	return raw, err
-}
-
-// JSONRow returns a single row as a map, or nil when there is none.
-func JSONRow(ctx context.Context, q Querier, sql string, args ...any) (map[string]any, error) {
-	rows, err := JSONRows(ctx, q, sql, args...)
-	if err != nil || len(rows) == 0 {
-		return nil, err
-	}
-	return rows[0], nil
-}
-
 // IsUniqueViolation reports whether err is a PostgreSQL unique-constraint error.
 func IsUniqueViolation(err error) bool {
 	var pg *pgconn.PgError
@@ -101,9 +61,6 @@ func IsInvalidText(err error) bool {
 	var pg *pgconn.PgError
 	return errors.As(err, &pg) && pg.Code == "22P02"
 }
-
-// IsNoRows reports pgx.ErrNoRows.
-func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 
 // equalPtr reports whether two optional values are the same (both NULL, or both set and equal).
 func equalPtr[T comparable](a, b *T) bool {

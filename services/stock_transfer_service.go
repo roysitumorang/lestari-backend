@@ -204,15 +204,7 @@ func (q *stockTransferService) CreateStockTransfer(
 		return nil, err
 	}
 	if request.RequiresConfirmation {
-		if err = q.notificationRepository.CreateNotification(ctx, tx, &models.Notification{
-			StoreID:   request.StoreID,
-			BranchID:  &request.ToBranchID,
-			Source:    models.NotificationSourceBackOffice,
-			Title:     i18n.Tr("Incoming stock transfer"),
-			Message:   i18n.Tr("Transfer {number} is waiting for your confirmation.", "number", request.TransferNumber),
-			LinkRoute: "report-transfer-confirmations",
-			CreatedAt: request.CreatedAt,
-		}); err != nil {
+		if err = q.notificationRepository.CreateNotification(ctx, tx, models.NewNotification(request.StoreID, &request.ToBranchID, i18n.Tr("Incoming stock transfer"), i18n.Tr("Transfer {number} is waiting for your confirmation.", "number", request.TransferNumber), "report-transfer-confirmations", request.CreatedAt)); err != nil {
 			helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrCreateNotification")
 			return nil, err
 		}
@@ -353,15 +345,7 @@ func (q *stockTransferService) AcceptStockTransfer(
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrUpdateStockTransferStatus")
 		return err
 	}
-	if err = q.notificationRepository.CreateNotification(ctx, tx, &models.Notification{
-		StoreID:   stockTransfer.StoreID,
-		BranchID:  &stockTransfer.FromBranchID,
-		Source:    models.NotificationSourceBackOffice,
-		Title:     i18n.Tr("Transfer accepted"),
-		Message:   i18n.Tr("Transfer {number} was received.", "number", stockTransfer.TransferNumber),
-		LinkRoute: "report-transfers",
-		CreatedAt: request.At,
-	}); err != nil {
+	if err = q.notificationRepository.CreateNotification(ctx, tx, models.NewNotification(stockTransfer.StoreID, &stockTransfer.FromBranchID, i18n.Tr("Transfer accepted"), i18n.Tr("Transfer {number} was received.", "number", stockTransfer.TransferNumber), "report-transfers", request.At)); err != nil {
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrCreateNotification")
 	}
 	return err
@@ -390,15 +374,7 @@ func (q *stockTransferService) RejectStockTransfer(
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrUpdateStockTransferStatus")
 		return err
 	}
-	if err = q.notificationRepository.CreateNotification(ctx, tx, &models.Notification{
-		StoreID:   stockTransfer.StoreID,
-		BranchID:  &stockTransfer.FromBranchID,
-		Source:    models.NotificationSourceBackOffice,
-		Title:     i18n.Tr("Transfer rejected"),
-		Message:   i18n.Tr("Transfer {number} was rejected: {reason}", "number", stockTransfer.TransferNumber, "reason", request.Reason),
-		LinkRoute: "report-transfers",
-		CreatedAt: request.At,
-	}); err != nil {
+	if err = q.notificationRepository.CreateNotification(ctx, tx, models.NewNotification(stockTransfer.StoreID, &stockTransfer.FromBranchID, i18n.Tr("Transfer rejected"), i18n.Tr("Transfer {number} was rejected: {reason}", "number", stockTransfer.TransferNumber, "reason", request.Reason), "report-transfers", request.At)); err != nil {
 		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrCreateNotification")
 	}
 	return err

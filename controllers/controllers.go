@@ -17,6 +17,7 @@ import (
 	"github.com/roysitumorang/lestari-backend/helper"
 	"github.com/roysitumorang/lestari-backend/i18n"
 	"github.com/roysitumorang/lestari-backend/models"
+	"github.com/roysitumorang/lestari-backend/repositories"
 )
 
 // currentBranchID is the active branch of the signed-in user (X-Branch-Id or their default).
@@ -85,4 +86,39 @@ func currentActor(c fiber.Ctx) models.Actor {
 	p := helper.P(c)
 	id, _ := uuid.Parse(p.UserID)
 	return models.Actor{ID: id, Name: p.Name}
+}
+
+// currentUserID is the signed-in user.
+func currentUserID(c fiber.Ctx) uuid.UUID {
+	id, _ := uuid.Parse(helper.P(c).UserID)
+	return id
+}
+
+// inTx begins a transaction, runs fn in it and commits; any error rolls it back. The transaction belongs to the
+// controller, so several services can take part in one request.
+func inTx(c fiber.Ctx, ctxt string, fn func(tx pgx.Tx) error) error {
+	ctx := c.Context()
+	tx, err := repositories.BeginTx(ctx)
+	if err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrBeginTx")
+		return err
+	}
+	defer rollback(ctx, tx, ctxt)
+	if err = fn(tx); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		helper.Log(ctx, slog.LevelError, err.Error(), ctxt, "ErrCommit")
+	}
+	return err
+}
+
+// page turns the filter's limit and 1-based page into the meta of a list response.
+func page(limit, pageNo, total int64) helper.Meta {
+	return helper.NewMeta(helper.Page{Page: int(pageNo), PerPage: int(limit)}, int(total))
+}
+
+// joinComma joins values for a sentence.
+func joinComma(values []string) string {
+	return strings.Join(values, ", ")
 }

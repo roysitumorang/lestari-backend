@@ -39,7 +39,7 @@ linters:
         # not on every exported identifier.
         - name: exported
           disabled: true
-        # Handlers and crud hooks have fixed signatures; unused parameters there are expected.
+        # Handlers and rule hooks have fixed signatures; unused parameters there are expected.
         - name: unused-parameter
           disabled: true
         - name: var-naming

@@ -79,28 +79,25 @@ i18n/                   English / Bahasa Indonesia: Lang.T(), Accept-Language pa
 export/                 XLSX, CSV, PDF writer (text, tables, Code 128, QR)
 docs/                   generated Swagger spec (make doc), served at /swagger/index.html outside production
 seeds/                  demo store, created through the HTTP API
-internal/api, crud      endpoints not converted to the layers above yet (see "Conversion status")
 ```
 
-Resources that are plain records (products, customers, taxes, …) are declared once as a `crud.Resource`
-(fields, types, validation, lookups, filters, hooks); the engine generates SQL, validation errors, the JSON
-shape, CSV/XLSX import & export and an import template. Business operations (sales, purchases, stock,
-transfers, debts, billing, reports) are explicit handlers that run in transactions.
+Every entity has the same five files — `models/x_model.go`, `sanitizers/x_sanitizer.go`,
+`repositories/x_repository.go`, `services/x_service.go`, `controllers/x_controller.go` — and every endpoint is an
+explicit handler documented with a Swagger example (344 operations). The conventions they share:
 
-## Conversion status
+- **Controllers** read the request through a sanitizer, take `time.Now()`, open the transaction when one is needed,
+  call services and log every error with `helper.Log` before returning it.
+- **Services** hold the business rules: pricing a sale (variant, wholesale and customer-type prices, promotions,
+  points, service charge, tax, fees, rounding), purchases with weighted-average cost and payables, debts and their
+  payments, returns, online-order status transitions, billing.
+- **Repositories** hold the SQL. An update compares every attribute with the stored row, writes only what changed
+  and touches `updated_at` only then; nothing is written when nothing changed.
+- Stock changes only in `StockRepository.ChangeStock` and customer points only in `PointRepository.ChangePoints`,
+  each writing its history line; a product with ingredients moves the stock of its ingredients.
+- JSON attribute names are lower-case `snake_case` everywhere.
 
-The API is being moved from one generic CRUD engine to explicit model / sanitizer / repository / service / controller
-files per entity. Converted so far (114 operations, all with Swagger examples):
-
-- master data: taxes, categories, cash drawers, suppliers, customer types, customers, cash in & out, discounts, fees,
-  payment methods, promotions, commissions;
-- products and stock: products (SKU, duplicate, barcodes, labels), branch products, stock levels (adjustments,
-  history, import, recalculation), stock opname, stock transfers.
-
-Still served by `internal/api` and `internal/crud`, behaving as before: sales and purchases with their returns and
-debts, branches, staff, online store, PPOB, account, settings, billing, dashboard, reports. Both packages are deleted
-when the last group is converted. Until then the remaining sale and purchase handlers change stock through the old
-`productStock` helper; converted code uses `StockRepository.ChangeStock`, the single place stock changes.
+The reports are defined once each (row, summary, SQL, export columns) and share one runner
+(`repositories/report_details.go`), so a list, its summary and its export always agree.
 
 ## Languages
 
@@ -163,10 +160,10 @@ or when a message is built with `+` / `fmt.Sprintf` instead of a template. Termi
 - **Plugins.** Features of paid plugins answer `402 plugin_required` until the store has the plugin
   (`/plugins/{code}/trial` starts a 7-day trial).
 - **Payments.** Invoices and PPOB top-ups paid with premium coins are applied immediately. Other methods go through
-  the `api.Payments` interface; the default implementation returns manual-transfer instructions. A gateway calls
+  the `services.Payments` interface; the default implementation returns manual-transfer instructions. A gateway calls
   `POST /api/v1/webhooks/payments` with `{"reference":"INV/…","status":"paid"}` and header
   `X-Signature: hex(HMAC-SHA256(JWT_SECRET, body))`.
-- **Messages.** OTPs and invitations go through the `api.Sender` interface; the default writes them to the log.
+- **Messages.** OTPs and invitations go through the `services.Sender` interface; the default writes them to the log.
   Plug in an SMS/WhatsApp/e-mail provider there.
 - **Background jobs** (stock recalculation, copying products to a branch, data reset) run in-process and are
   recorded in the `jobs` table.
@@ -212,4 +209,4 @@ notifications and files in Bahasa Indonesia via `Accept-Language` or the display
 
 - Regions: all Indonesian provinces and a starter set of cities/regencies (`0002_regions.sql`); load the full
   regency list for production.
-- PPOB: every new branch gets a starter price list (`internal/api/ppob.go`); connect a PPOB aggregator to sell for real.
+- PPOB: every new branch gets a starter price list (`models/ppob_catalog.go`); connect a PPOB aggregator to sell for real.

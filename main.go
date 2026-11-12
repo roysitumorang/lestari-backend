@@ -129,7 +129,7 @@ func run() error {
 						return err
 					}
 					defer service.Close()
-					info, err := seeds.Demo(ctx, service.NewApp(logger), service.API)
+					info, err := seeds.Demo(ctx, service.NewApp(logger), service.SeedDeps())
 					if err != nil {
 						helper.Capture(ctx, slog.LevelError, err, ctxt, "ErrDemo")
 						return err

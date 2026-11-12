@@ -22,7 +22,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/roysitumorang/lestari-backend/config"
-	"github.com/roysitumorang/lestari-backend/internal/api"
 	"github.com/roysitumorang/lestari-backend/middlewares"
 	"github.com/roysitumorang/lestari-backend/seeds"
 )
@@ -68,7 +67,7 @@ func TestRoutesCoverContract(t *testing.T) {
 type harness struct {
 	t      *testing.T
 	app    *fiber.App
-	a      *api.API
+	a      seeds.Deps
 	routes []string // every "METHOD /path" of the app
 	token  string
 	branch string
@@ -175,7 +174,7 @@ func setup(t *testing.T) *harness {
 	if err := q.Migration.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	app, a := q.NewApp(slog.New(slog.NewTextHandler(io.Discard, nil))), q.API
+	app, a := q.NewApp(slog.New(slog.NewTextHandler(io.Discard, nil))), q.SeedDeps()
 	info, err := seeds.Demo(ctx, app, a)
 	if err != nil {
 		t.Fatalf("seed: %v", err)
@@ -832,4 +831,165 @@ func TestIntegrationStockTransfers(t *testing.T) {
 	if code, b, _ := h.call("GET", "/branch-products/export?format=csv&q="+sku, nil); code != 200 || !strings.Contains(string(b), sku) {
 		t.Errorf("branch product export: status %d", code)
 	}
+}
+
+func TestIntegrationSalesAndPurchases(t *testing.T) {
+	h := setup(t)
+	today := time.Now().Format("2006-01-02")
+	data := func(m map[string]any) map[string]any { d, _ := m["data"].(map[string]any); return d }
+	num := func(m map[string]any, key string) float64 { f, _ := m[key].(float64); return f }
+	stock := func(id string) float64 { return num(data(h.json("GET", "/products/"+id, nil, 200)), "stock") }
+
+	p := data(h.json("POST", "/products", map[string]any{"name": "Trade probe", "selling_price": 10000, "purchase_price": 4000, "stock": 10, "show_in_online_store": true}, 201))
+	pid := p["id"].(string)
+	supplier := data(h.json("POST", "/suppliers", map[string]any{"name": "Trade probe supplier"}, 201))["id"]
+	customer := data(h.json("POST", "/customers", map[string]any{"name": "Trade probe customer"}, 201))["id"]
+
+	// a credit purchase receives stock, averages the cost and becomes a payable
+	h.json("POST", "/purchases", map[string]any{"purchase_date": today, "payment_type": "credit", "items": []any{map[string]any{"product_id": pid, "quantity": 5, "unit_cost": 5000}}}, 422)
+	h.json("POST", "/purchases", map[string]any{"purchase_date": today, "items": []any{}}, 422)
+	pu := data(h.json("POST", "/purchases", map[string]any{"purchase_date": today, "payment_type": "credit", "supplier_id": supplier,
+		"items": []any{map[string]any{"product_id": pid, "quantity": 5, "unit_cost": 5000}}}, 201))
+	puID := pu["id"].(string)
+	if pu["status"] != "unpaid" || num(pu, "grand_total") != 25000 || !strings.HasPrefix(pu["receipt_number"].(string), "PO/") || len(pu["items"].([]any)) != 1 {
+		t.Fatalf("purchase: %v", pu)
+	}
+	prod := data(h.json("GET", "/products/"+pid, nil, 200))
+	if num(prod, "stock") != 15 || num(prod, "purchase_price") != 4333.33 {
+		t.Errorf("after purchase: stock %v cost %v", prod["stock"], prod["purchase_price"])
+	}
+	// an update that changes nothing keeps updated_at; new items replace the stock of the old ones
+	same := data(h.json("PUT", "/purchases/"+puID, map[string]any{"note": nil, "payment_type": "credit"}, 200))
+	if same["updated_at"] != pu["updated_at"] {
+		t.Errorf("unchanged purchase was written: %v → %v", pu["updated_at"], same["updated_at"])
+	}
+	changed := data(h.json("PUT", "/purchases/"+puID, map[string]any{"note": "probe", "items": []any{map[string]any{"product_id": pid, "quantity": 2, "unit_cost": 5000}}}, 200))
+	if num(changed, "grand_total") != 10000 || changed["note"] != "probe" || stock(pid) != 12 {
+		t.Errorf("edited purchase: total %v note %v stock %v", changed["grand_total"], changed["note"], stock(pid))
+	}
+	pay := first(h.json("GET", "/payables?q="+strings.ReplaceAll(pu["receipt_number"].(string), "/", "%2F"), nil, 200))
+	if pay == nil || num(pay, "remaining_amount") != 10000 {
+		t.Fatalf("payable: %v", pay)
+	}
+	payID := pay["id"].(string)
+	h.json("POST", "/payables/"+payID+"/payments", map[string]any{"amount": 99999, "payment_date": today, "payment_method": "cash"}, 422)
+	h.json("POST", "/payables/"+payID+"/payments", map[string]any{"amount": 4000, "payment_date": "soon", "payment_method": "shells"}, 422)
+	part := data(h.json("POST", "/payables/"+payID+"/payments", map[string]any{"amount": 4000, "payment_date": today, "payment_method": "cash"}, 200))
+	if part["status"] != "unpaid" || num(part, "remaining_amount") != 6000 {
+		t.Errorf("part payment: %v", part)
+	}
+	// a return to the supplier takes stock out and may reduce what is owed
+	h.json("POST", "/purchases/"+puID+"/returns", map[string]any{"items": []any{map[string]any{"product_id": pid, "quantity": 3}}}, 422)
+	ret := data(h.json("POST", "/purchases/"+puID+"/returns", map[string]any{"refund_method": "reduce_payable", "items": []any{map[string]any{"product_id": pid, "quantity": 1}}}, 201))
+	if num(ret, "refund_amount") != 5000 || !strings.HasPrefix(ret["return_number"].(string), "RB/") || stock(pid) != 11 {
+		t.Errorf("purchase return: %v, stock %v", ret, stock(pid))
+	}
+	full := data(h.json("POST", "/payables/"+payID+"/payments", map[string]any{"amount": 1000, "payment_date": today, "payment_method": "bank_transfer"}, 200))
+	if full["status"] != "paid" {
+		t.Errorf("payable after the last payment: %v", full)
+	}
+	h.json("POST", "/payables/"+payID+"/payments", map[string]any{"amount": 1, "payment_date": today, "payment_method": "cash"}, 409)
+	if got := data(h.json("GET", "/purchases/"+puID, nil, 200))["status"]; got != "completed" {
+		t.Errorf("purchase after its payable was paid: %v", got)
+	}
+	if len(data(h.json("GET", "/payables/"+payID, nil, 200))["payments"].([]any)) != 2 {
+		t.Error("the payable should list two payments")
+	}
+
+	// a cash sale takes stock and gives change; it cannot sell more than there is
+	item := func(q float64) []any { return []any{map[string]any{"product_id": pid, "quantity": q}} }
+	h.json("POST", "/sales", map[string]any{"items": item(99)}, 422)
+	h.json("POST", "/sales", map[string]any{"items": item(1), "paid_amount": 5000}, 422)
+	h.json("POST", "/sales", map[string]any{"items": item(1), "payment_type": "credit"}, 422)
+	sale := data(h.json("POST", "/sales", map[string]any{"items": item(2), "paid_amount": 50000, "label": "Probe"}, 201))
+	saleID := sale["id"].(string)
+	if num(sale, "grand_total") != 20000 || num(sale, "change_amount") != 30000 || num(sale, "paid_amount") != 20000 || sale["status"] != "completed" ||
+		!strings.HasPrefix(sale["receipt_number"].(string), "S/") || len(sale["items"].([]any)) != 1 || stock(pid) != 9 {
+		t.Fatalf("sale: %v, stock %v", sale, stock(pid))
+	}
+	h.json("POST", "/sales", map[string]any{"items": item(1), "receipt_number": sale["receipt_number"]}, 409)
+	// a credit sale becomes a receivable; paying it completes the sale
+	credit := data(h.json("POST", "/sales", map[string]any{"items": item(1), "payment_type": "credit", "customer_id": customer, "paid_amount": 0}, 201))
+	if credit["status"] != "unpaid" {
+		t.Errorf("credit sale: %v", credit["status"])
+	}
+	rec := first(h.json("GET", fmt.Sprintf("/receivables?customer_id=%v", customer), nil, 200))
+	if rec == nil || num(rec, "remaining_amount") != 10000 || rec["customer_name"] != "Trade probe customer" {
+		t.Fatalf("receivable: %v", rec)
+	}
+	h.json("POST", "/receivables/"+rec["id"].(string)+"/payments", map[string]any{"amount": 10000, "payment_date": today, "payment_method": "qris"}, 200)
+	if got := data(h.json("GET", "/sales/"+credit["id"].(string), nil, 200))["status"]; got != "completed" {
+		t.Errorf("credit sale after payment: %v", got)
+	}
+	// a customer return puts stock back; deleting a sale does too
+	h.json("POST", "/sales/"+saleID+"/returns", map[string]any{"items": item(5)}, 422)
+	back := data(h.json("POST", "/sales/"+saleID+"/returns", map[string]any{"reason": "probe", "items": item(1)}, 201))
+	if num(back, "refund_amount") != 10000 || !strings.HasPrefix(back["return_number"].(string), "RJ/") || stock(pid) != 9 {
+		t.Errorf("sales return: %v, stock %v", back, stock(pid))
+	}
+	h.json("GET", "/sales-returns/"+back["id"].(string), nil, 200)
+	h.json("DELETE", "/sales/"+saleID, nil, 204)
+	h.json("GET", "/sales/"+saleID, nil, 404)
+	if stock(pid) != 11 {
+		t.Errorf("stock after deleting the sale: %v", stock(pid))
+	}
+
+	// shifts: one open shift per cash drawer
+	drawer := data(h.json("POST", "/cash-drawers", map[string]any{"name": "Probe drawer"}, 201))["id"]
+	shift := data(h.json("POST", "/shifts", map[string]any{"cash_drawer_id": drawer, "opening_cash": 100000}, 201))
+	h.json("POST", "/shifts", map[string]any{"cash_drawer_id": drawer}, 409)
+	in := data(h.json("POST", "/sales", map[string]any{"items": item(1), "shift_id": shift["id"]}, 201))
+	closed := data(h.json("POST", "/shifts/"+shift["id"].(string)+"/close", map[string]any{"actual_cash": 109000}, 200))
+	if num(closed, "expected_cash") != 110000 || num(closed, "difference") != -1000 || len(closed["payments"].([]any)) != 1 {
+		t.Errorf("closed shift: %v", closed)
+	}
+	h.json("POST", "/shifts/"+shift["id"].(string)+"/close", map[string]any{"actual_cash": 1}, 409)
+	h.json("DELETE", "/sales/"+in["id"].(string), nil, 204)
+
+	// online orders take stock while they are being processed
+	order := data(h.json("POST", "/catalog/orders", map[string]any{"customer_name": "Probe buyer", "shipping_fee": 5000, "items": item(2)}, 201))
+	orderID := order["id"].(string)
+	if order["status"] != "unpaid" || num(order, "grand_total") != 25000 || !strings.HasPrefix(order["order_number"].(string), "ORD/") {
+		t.Fatalf("order: %v", order)
+	}
+	h.json("POST", "/catalog/orders", map[string]any{"items": item(1)}, 422)
+	h.json("PATCH", "/catalog/orders/"+orderID+"/status", map[string]any{"status": "delivered"}, 409)
+	h.json("PATCH", "/catalog/orders/"+orderID+"/status", map[string]any{"status": "processing"}, 200)
+	if stock(pid) != 9 {
+		t.Errorf("stock while the order is processed: %v", stock(pid))
+	}
+	h.json("PATCH", "/catalog/orders/"+orderID+"/status", map[string]any{"status": "cancelled"}, 422)
+	done := data(h.json("PATCH", "/catalog/orders/"+orderID+"/status", map[string]any{"status": "cancelled", "reason": "probe"}, 200))
+	if done["status"] != "cancelled" || done["status_reason"] != "probe" || stock(pid) != 11 {
+		t.Errorf("cancelled order: %v, stock %v", done["status"], stock(pid))
+	}
+	account := data(h.json("POST", "/catalog/payment-accounts", map[string]any{"type": "bank", "provider": "BCA", "account_name": "Probe", "account_number": "123"}, 201))
+	h.json("POST", "/catalog/payment-accounts", map[string]any{"type": "qris", "provider": "QRIS", "account_name": "Probe"}, 422)
+	h.json("DELETE", "/catalog/payment-accounts/"+account["id"].(string), nil, 204)
+
+	// reports: summaries, totals rows and details
+	daily := data(h.json("GET", "/reports/daily-sales?start_date="+today+"&end_date="+today, nil, 200))
+	if s, _ := daily["summary"].(map[string]any); s == nil || num(s, "transaction_count") < 1 || daily["totals"] == nil {
+		t.Errorf("daily sales: %v", daily)
+	}
+	pl := data(h.json("GET", "/reports/profit-loss?start_date="+today+"&end_date="+today, nil, 200))
+	if s, _ := pl["summary"].(map[string]any); s == nil || num(s, "purchase_total") < 10000 || len(pl["rows"].([]any)) != 1 {
+		t.Errorf("profit and loss: %v", pl)
+	}
+	flow := data(h.json("GET", "/reports/cash-flow?start_date="+today+"&end_date="+today+"&type=expense&per_page=5", nil, 200))
+	if s, _ := flow["summary"].(map[string]any); s == nil || num(s, "total_income") != 0 || num(s, "total_expense") <= 0 {
+		t.Errorf("cash flow (expenses): %v", flow["summary"])
+	}
+	week := rows(h.json("GET", "/reports/visitors?group_by=weekday&start_date="+today+"&end_date="+today, nil, 200))
+	if len(week) != 1 || week[0].(map[string]any)["period"] != time.Now().Weekday().String() {
+		t.Errorf("visitors by weekday: %v", week)
+	}
+	if got := data(h.json("GET", "/reports/sales-by-product/"+pid, nil, 200))["sales"]; len(got.([]any)) < 1 {
+		t.Errorf("sales of the product: %v", got)
+	}
+	dash := data(h.json("GET", "/dashboard", nil, 200))
+	if s, _ := dash["summary"].(map[string]any); s == nil || s["compared_to_previous"] == nil || len(dash["hourly"].([]any)) != 24 {
+		t.Errorf("dashboard: %v", dash["summary"])
+	}
+	h.json("GET", "/dashboard?date=yesterday", nil, 422)
 }

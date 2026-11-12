@@ -17,7 +17,13 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/roysitumorang/lestari-backend/internal/api"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/roysitumorang/lestari-backend/config"
+	"github.com/roysitumorang/lestari-backend/helper"
+	"github.com/roysitumorang/lestari-backend/middlewares"
+	"github.com/roysitumorang/lestari-backend/models"
+	"github.com/roysitumorang/lestari-backend/services"
 )
 
 type Info struct {
@@ -84,8 +90,16 @@ func id(m map[string]any) string {
 	return v
 }
 
+// Deps is what the seeder needs from the application.
+type Deps struct {
+	DB           *pgxpool.Pool
+	Cfg          config.Config
+	Auth         *middlewares.Service
+	LoginService services.AuthService
+}
+
 // Demo creates (or recreates) the demo store.
-func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
+func Demo(ctx context.Context, app *fiber.App, a Deps) (Info, error) {
 	info := Info{Email: DemoEmail, Password: DemoPassword}
 	// remove a previous demo store
 	if _, err := a.DB.Exec(ctx, `DELETE FROM stores WHERE id IN (SELECT store_id FROM users WHERE email = $1)`, DemoEmail); err != nil {
@@ -93,11 +107,11 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	}
 	var userID string
 	err := pgx.BeginFunc(ctx, a.DB, func(tx pgx.Tx) error {
-		var err error
-		userID, info.StoreID, err = a.Provision(ctx, tx, api.Provision{StoreName: "Apotik Lestari", OwnerName: "Abigael Lestari", Email: DemoEmail, Password: DemoPassword, Phone: "+6281234567890"})
+		user, store, err := a.LoginService.Provision(ctx, tx, &models.Provision{StoreName: "Apotik Lestari", OwnerName: "Abigael Lestari", Email: DemoEmail, Password: DemoPassword, Phone: "+6281234567890", At: time.Now()})
 		if err != nil {
 			return err
 		}
+		userID, info.StoreID = user.String(), store.String()
 		if _, err := tx.Exec(ctx, `UPDATE stores SET plan='pro', plan_expires_at = now() + interval '1 year', coin_balance = 250000, reward_balance = 50000, referral_code = 'LESTARI' WHERE id=$1`, info.StoreID); err != nil {
 			return err
 		}
@@ -117,7 +131,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 	}
 	c := &client{ctx: ctx, app: app, prefix: a.Cfg.APIPrefix, token: tok.AccessToken}
 	rng := rand.New(rand.NewSource(42)) //nolint:gosec // deterministic sample data, not security-sensitive
-	now := time.Now().In(a.Loc)
+	now := time.Now().In(helper.Location)
 
 	// ---------- settings ----------
 	var province, city string
@@ -220,7 +234,7 @@ func Demo(ctx context.Context, app *fiber.App, a *api.API) (Info, error) {
 		}
 		n := 2 + rng.Intn(5)
 		for range n {
-			at := time.Date(date.Year(), date.Month(), date.Day(), 8+rng.Intn(13), rng.Intn(60), rng.Intn(60), 0, a.Loc)
+			at := time.Date(date.Year(), date.Month(), date.Day(), 8+rng.Intn(13), rng.Intn(60), rng.Intn(60), 0, helper.Location)
 			if at.After(now) {
 				at = now.Add(-time.Duration(rng.Intn(3600)) * time.Second)
 			}
