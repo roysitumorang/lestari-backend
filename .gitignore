@@ -1,5 +1,5 @@
-bin/
 storage/
 .env
 *.test
 coverage.out
+/lestari
