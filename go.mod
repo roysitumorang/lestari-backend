@@ -4,7 +4,7 @@ go 1.27
 
 require (
 	github.com/goccy/go-json v0.12.0
-	github.com/gofiber/contrib/v3/swaggo v1.0.17
+	github.com/gofiber/contrib/v3/swaggo v1.0.18
 	github.com/gofiber/fiber/v3 v3.7.0
 	github.com/gofiber/utils/v2 v2.6.5
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -34,12 +34,12 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.4 // indirect
-	github.com/klauspost/compress v1.20.4 // indirect
+	github.com/klauspost/compress v1.20.5 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/molecule-man/go-brrr v1.3.1 // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect
-	github.com/richardlehane/mscfb v1.0.9 // indirect
+	github.com/richardlehane/mscfb v1.0.10 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/swaggo/files/v2 v2.0.2 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
